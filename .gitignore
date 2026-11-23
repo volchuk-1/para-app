@@ -1,0 +1,9 @@
+build/
+Para.xcodeproj/
+Payload/
+*.ipa
+App/Info.plist
+Widget/Info.plist
+App/*.entitlements
+Widget/*.entitlements
+.DS_Store
