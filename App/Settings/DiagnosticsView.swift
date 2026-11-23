@@ -2,19 +2,12 @@ import SwiftUI
 import ActivityKit
 import WidgetKit
 
-@main
-struct ParaApp: App {
-    var body: some Scene {
-        WindowGroup { ContentView() }
-    }
-}
-
-struct ContentView: View {
+/// Probe screen from the SideStore test: App Group + widget, Live Activity. Push probe joins in task 6.
+struct DiagnosticsView: View {
     @State private var status = ""
     @State private var note = ""
 
     var body: some View {
-        NavigationStack {
             Form {
                 Section("Проба") {
                     Text("Якщо ти це бачиш, застосунок встановився через SideStore.")
@@ -31,8 +24,7 @@ struct ContentView: View {
                     Section("Результат") { Text(status) }
                 }
             }
-            .navigationTitle("Двоє · проба")
-        }
+            .navigationTitle("Діагностика")
     }
 
     private func save() {
