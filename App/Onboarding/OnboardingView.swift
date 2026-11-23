@@ -118,7 +118,7 @@ private struct PairCodeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Spacer()
-            TagLabel(text: "Код для \(result.partner?.name ?? "партнера")")
+            TagLabel(text: "Код · \(result.partner?.name ?? "партнер")")
             Text(spaced(result.pairCode ?? ""))
                 .font(.system(size: 46, weight: .bold, design: .monospaced))
                 .tracking(4)
