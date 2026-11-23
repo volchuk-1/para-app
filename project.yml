@@ -39,6 +39,7 @@ targets:
         aps-environment: development
     dependencies:
       - target: ParaWidget
+      - target: ParaShare
   ParaWidget:
     type: app-extension
     platform: iOS
@@ -56,6 +57,28 @@ targets:
       path: Widget/ParaWidget.entitlements
       properties:
         com.apple.security.application-groups: [group.com.volchuk.para]
+  ParaShare:
+    type: app-extension
+    platform: iOS
+    sources: [Share, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.volchuk.para.share
+    info:
+      path: Share/Info.plist
+      properties:
+        CFBundleDisplayName: DaVincit
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    entitlements:
+      path: Share/ParaShare.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.volchuk.para]
   ParaTests:
     type: bundle.unit-test
     platform: iOS
@@ -70,5 +93,6 @@ schemes:
       targets:
         Para: all
         ParaWidget: all
+        ParaShare: all
     test:
       targets: [ParaTests]

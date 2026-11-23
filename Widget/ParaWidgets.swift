@@ -97,10 +97,58 @@ struct PingLiveActivity: Widget {
     }
 }
 
+// MARK: - Date countdown (accepted invitation)
+
+struct DateLiveActivity: Widget {
+    private let olive = Color(red: 0x4B / 255, green: 0x5E / 255, blue: 0x3A / 255)
+    private let cream = Color(red: 0xF2 / 255, green: 0xEE / 255, blue: 0xE2 / 255)
+
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: DateAttributes.self) { context in
+            HStack(spacing: 12) {
+                Image(systemName: "heart.fill").font(.title2).foregroundStyle(cream)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(context.attributes.title).font(.headline).foregroundStyle(cream).lineLimit(1)
+                    if !context.attributes.place.isEmpty {
+                        Text(context.attributes.place).font(.caption).foregroundStyle(cream.opacity(0.8)).lineLimit(1)
+                    }
+                }
+                Spacer()
+                Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true)
+                    .monospacedDigit().font(.title2.bold()).foregroundStyle(cream)
+                    .multilineTextAlignment(.trailing).frame(maxWidth: 110)
+            }
+            .padding()
+            .activityBackgroundTint(olive)
+            .activitySystemActionForegroundColor(cream)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Label(context.attributes.title, systemImage: "heart.fill").lineLimit(1)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true).monospacedDigit()
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    if !context.attributes.place.isEmpty { Text(context.attributes.place).font(.caption) }
+                }
+            } compactLeading: {
+                Image(systemName: "heart.fill").foregroundStyle(.pink)
+            } compactTrailing: {
+                Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true)
+                    .monospacedDigit().frame(width: 52)
+            } minimal: {
+                Image(systemName: "heart.fill").foregroundStyle(.pink)
+            }
+        }
+    }
+}
+
 @main
 struct ParaWidgets: WidgetBundle {
     var body: some Widget {
         NoteWidget()
         PingLiveActivity()
+        DateLiveActivity()
     }
 }

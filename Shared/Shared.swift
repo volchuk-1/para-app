@@ -18,6 +18,16 @@ struct PingAttributes: ActivityAttributes {
     var title: String
 }
 
+/// Countdown to an accepted date, on the lock screen and in the Dynamic Island.
+struct DateAttributes: ActivityAttributes {
+    public struct ContentState: Codable, Hashable {
+        var startsAt: Date
+    }
+    var eventId: String
+    var title: String
+    var place: String
+}
+
 extension Date {
     /// A range that is never inverted, so `Text(timerInterval:)` can't crash after the end.
     static func countdown(to end: Date) -> ClosedRange<Date> {

@@ -7,3 +7,5 @@ Widget/Info.plist
 App/*.entitlements
 Widget/*.entitlements
 .DS_Store
+Share/Info.plist
+Share/*.entitlements

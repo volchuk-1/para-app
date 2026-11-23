@@ -39,6 +39,7 @@ jobs:
           APP=build/Build/Products/Release-iphoneos/Para.app
           ls "$APP" "$APP/PlugIns"
           codesign --force --sign - --entitlements Widget/ParaWidget.entitlements "$APP/PlugIns/ParaWidget.appex"
+          codesign --force --sign - --entitlements Share/ParaShare.entitlements "$APP/PlugIns/ParaShare.appex"
           codesign --force --sign - --entitlements App/Para.entitlements "$APP"
           codesign -d --entitlements - "$APP" || true
           mkdir -p Payload
