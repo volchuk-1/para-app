@@ -5,7 +5,7 @@ struct UsView: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var store: Store
     @Binding var route: Route?
-    @State private var who: String = ""
+    @Binding var who: String
     @State private var showBought = false
     @State private var open: Wish?
     @State private var showSettings = false

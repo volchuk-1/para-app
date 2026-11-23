@@ -43,6 +43,9 @@ struct MainView: View {
     @EnvironmentObject var state: AppState
     @StateObject private var store = Store()
     @State private var tab: Tab = .home
+    @State private var calendarDay = Calendar.current.startOfDay(for: Date())
+    @State private var wishOwner = ""
+    @State private var menu: MeAction?
     @State private var showAdd = false
     @State private var route: Route?
     @Environment(\.scenePhase) private var phase
@@ -52,22 +55,28 @@ struct MainView: View {
             Group {
                 switch tab {
                 case .home: HomeView(tab: $tab, route: $route)
-                case .calendar: CalendarView(route: $route)
+                case .calendar: CalendarView(route: $route, day: $calendarDay)
                 case .together: TogetherView(route: $route)
-                case .us: UsView(route: $route)
+                case .us: UsView(route: $route, who: $wishOwner)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            TabBar(tab: $tab) { showAdd = true }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 6)
+            NavDock(tab: $tab, calendarDay: $calendarDay, wishOwner: $wishOwner,
+                    onAdd: { showAdd = true }, onMenu: { menu = $0 })
         }
         .environmentObject(store)
         .ignoresSafeArea(.keyboard)
         .sheet(isPresented: $showAdd) {
             AddSheet { r in showAdd = false; route = r }
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $menu) { m in
+            switch m {
+            case .notifications: NotificationsView()
+            case .code: CoupleCodeView().presentationDetents([.medium])
+            case .settings: SettingsView()
+            }
         }
         .sheet(item: $route) { r in
             switch r {
@@ -87,75 +96,6 @@ struct MainView: View {
             if let u { route = .share(u); state.pendingShare = nil }
         }
         .environmentObject(store)
-    }
-}
-
-/// Floating bar: the active tab expands with its name, «+» is a brown circle.
-/// Floating bar with an elastic olive capsule: when you switch tabs the front edge jumps ahead,
-/// the back edge catches up a moment later, so the capsule stretches and springs back.
-struct TabBar: View {
-    @Binding var tab: Tab
-    var onAdd: () -> Void
-    @State private var lead: CGFloat = 0
-    @State private var trail: CGFloat = 1
-
-    static let slots: [Tab?] = [.home, .calendar, nil, .together, .us]
-    static func slot(_ t: Tab) -> CGFloat { CGFloat(slots.firstIndex(of: t) ?? 0) }
-
-    var body: some View {
-        GeometryReader { g in
-            let w = g.size.width / CGFloat(Self.slots.count)
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Theme.olive)
-                    .frame(width: max(w * (trail - lead) - 8, 0), height: 48)
-                    .offset(x: w * lead + 4)
-                HStack(spacing: 0) {
-                    ForEach(0..<Self.slots.count, id: \.self) { i in
-                        if let t = Self.slots[i] { item(t).frame(width: w) } else { plus.frame(width: w) }
-                    }
-                }
-            }
-        }
-        .frame(height: 48)
-        .padding(8)
-        .background(Theme.paper, in: Capsule())
-        .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
-        .onAppear { lead = Self.slot(tab); trail = lead + 1 }
-        .onChange(of: tab) { _, t in move(to: Self.slot(t)) }
-        .sensoryFeedback(.selection, trigger: tab)
-    }
-
-    private func move(to s: CGFloat) {
-        let goingRight = s > lead
-        let front = Animation.spring(response: 0.28, dampingFraction: 0.62)
-        let back = Animation.spring(response: 0.5, dampingFraction: 0.6)
-        withAnimation(goingRight ? back : front) { lead = s }
-        withAnimation(goingRight ? front : back) { trail = s + 1 }
-    }
-
-    private var plus: some View {
-        Button(action: onAdd) {
-            Image(systemName: "plus").font(.system(size: 20, weight: .bold))
-                .frame(width: 48, height: 48)
-                .background(Theme.coffee, in: Circle())
-                .foregroundStyle(Theme.cream)
-        }
-        .accessibilityLabel("Додати")
-    }
-
-    private func item(_ t: Tab) -> some View {
-        Button { tab = t } label: {
-            Image(systemName: t.icon)
-                .font(.system(size: 19, weight: .semibold))
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .contentShape(Rectangle())
-                .foregroundStyle(tab == t ? Theme.cream : Color(hex: 0x8E9280))
-                .animation(.easeInOut(duration: 0.25), value: tab)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(t.title)
-        .accessibilityAddTraits(tab == t ? .isSelected : [])
     }
 }
 

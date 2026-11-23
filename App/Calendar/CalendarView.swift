@@ -5,7 +5,7 @@ struct CalendarView: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var store: Store
     @Binding var route: Route?
-    @State private var day = Calendar.current.startOfDay(for: Date())
+    @Binding var day: Date
     @State private var filter = "all"
     @State private var openEvent: Event?
 

@@ -7,6 +7,8 @@ final class Store: ObservableObject {
     @Published var events: [Event] = []
     @Published var watch: [WatchItem] = []
     @Published var wishes: [Wish] = []
+    @Published var notifications: [AppNotification] = []
+    @Published var unread = 0
     @Published var error: String?
     @Published var offline = false
 
@@ -32,6 +34,19 @@ final class Store: ObservableObject {
             self.watch = watch; Cache.save(watch, "watch")
             self.wishes = wishes; Cache.save(wishes, "wishes")
         }
+        await refreshNotifications()
+    }
+
+    func refreshNotifications() async {
+        guard let r = try? await api.notifications() else { return }
+        notifications = r.items
+        unread = r.unread
+    }
+
+    func markNotificationsRead() async {
+        guard unread > 0 else { return }
+        unread = 0
+        try? await api.markNotificationsRead()
     }
 
     func setEvents(_ e: [Event]) {
