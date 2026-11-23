@@ -34,13 +34,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Spacer()
-                Button { showSettings = true } label: {
-                    Image(systemName: "gearshape.fill").font(.system(size: 18))
-                        .frame(width: 44, height: 44)
-                        .background(Theme.cream.opacity(0.14), in: Circle())
-                }
-                .foregroundStyle(Theme.cream)
-                .accessibilityLabel("Налаштування")
+                Color.clear.frame(width: 46, height: 46)
             }
             (Text("Привіт, ") + Text(store.home?.greeting.name ?? state.me?.name ?? "").italic().bold() + Text("."))
                 .font(.serif(34))

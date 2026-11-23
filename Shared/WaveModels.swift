@@ -11,6 +11,8 @@ struct Invitation: Codable, Equatable, Hashable {
     var status: InviteStatus
     var replyNote: String?
     var answeredAt: Date?
+    var watchId: String? = nil
+    var buyUrl: String? = nil
 }
 
 struct Event: Codable, Identifiable, Equatable, Hashable {
@@ -43,6 +45,9 @@ struct EventDraft: Encodable {
     var note: String?
     var dress: String?
     var message: String?
+    /// Cinema date: the film from our list and the Multiplex session link.
+    var watchId: String? = nil
+    var buyUrl: String? = nil
 
     // ownerId must be sent as null for "ours", so encode it explicitly.
     func encode(to encoder: Encoder) throws {
@@ -57,8 +62,10 @@ struct EventDraft: Encodable {
         try c.encode(note, forKey: .note)
         try c.encode(dress, forKey: .dress)
         try c.encode(message, forKey: .message)
+        try c.encodeIfPresent(watchId, forKey: .watchId)
+        try c.encodeIfPresent(buyUrl, forKey: .buyUrl)
     }
-    private enum CodingKeys: String, CodingKey { case ownerId, title, startsAt, endsAt, place, mapUrl, note, dress, message }
+    private enum CodingKeys: String, CodingKey { case ownerId, title, startsAt, endsAt, place, mapUrl, note, dress, message, watchId, buyUrl }
 }
 
 // MARK: - Watch
@@ -105,6 +112,11 @@ struct WatchItem: Codable, Identifiable, Equatable, Hashable {
     var avg: Double?
     var releaseDate: String? = nil
     var releaseInUkraine: Bool? = nil
+    var overview: String? = nil
+    var backdropUrl: String? = nil
+    var genres: [String]? = nil
+    var rating: SiteRating? = nil
+    var reviews: [String: String]? = nil
 
     var kindLabel: String { isAnime ? "Аніме" : (mediaType == "tv" ? "Серіал" : "Фільм") }
     var episodeLabel: String? {

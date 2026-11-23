@@ -42,28 +42,69 @@ enum Route: Identifiable, Hashable {
 struct MainView: View {
     @EnvironmentObject var state: AppState
     @StateObject private var store = Store()
-    @State private var tab: Tab = .home
+    @State private var page: Page = .home
     @State private var calendarDay = Calendar.current.startOfDay(for: Date())
     @State private var wishOwner = ""
     @State private var menu: MeAction?
     @State private var showAdd = false
     @State private var route: Route?
+    @State private var freeTonight: Int?
     @Environment(\.scenePhase) private var phase
+
+    /// HomeView still talks in old tabs; map them onto pages.
+    private var legacyTab: Binding<Tab> {
+        Binding(get: {
+            switch page { case .week, .month, .invites: return .calendar; case .watch, .books: return .together; case .wishes: return .us; default: return .home }
+        }, set: { t in
+            switch t { case .home: page = .home; case .calendar: page = .week; case .together: page = .watch; case .us: page = .wishes }
+        })
+    }
+
+    private var sections: [BarSection] {
+        let next = Dock.nextEvent(store.events).map { "\($0.title.prefix(14)) \($0.startsAt.shortTime)" } ?? "вільно"
+        let watching = store.watch.first { $0.status == .watching }.map { "\($0.title.prefix(12))\($0.episodeLabel.map { " " + $0 } ?? "")" } ?? "фільми, книжки"
+        return [
+            BarSection(id: "me", icon: nil, avatar: String(state.me?.name.prefix(1) ?? "Я"), label: state.me?.name ?? "Я", note: "налаштування", start: .me,
+                       subs: [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil), BarSub(id: "finance", icon: "dollarsign.circle.fill", label: "Фінанси", page: .finance),
+                              BarSub(id: "games", icon: "gamecontroller.fill", label: "Ігри", page: .games), BarSub(id: "code", icon: "key.fill", label: "Код", page: nil)]),
+            BarSection(id: "home", icon: "house.fill", avatar: nil, label: "Головна", note: next, start: .home,
+                       subs: [BarSub(id: "home", icon: "house.fill", label: "Головна", page: .home), BarSub(id: "archive", icon: "square.stack.fill", label: "Історія", page: .archive)]),
+            BarSection(id: "calendar", icon: "calendar", avatar: nil, label: "Календар", note: freeTonight.map { "\($0) вільн. вечори" } ?? "тиждень", start: .week,
+                       subs: [BarSub(id: "week", icon: "list.bullet", label: "Тиждень", page: .week), BarSub(id: "month", icon: "calendar", label: "Місяць", page: .month),
+                              BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites)]),
+            BarSection(id: "together", icon: "heart.fill", avatar: nil, label: "Разом", note: watching, start: .watch,
+                       subs: [BarSub(id: "watch", icon: "popcorn.fill", label: "Дивимось", page: .watch), BarSub(id: "books", icon: "books.vertical.fill", label: "Книжки", page: .books),
+                              BarSub(id: "wishes", icon: "gift.fill", label: "Бажання", page: .wishes)]),
+        ]
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Group {
-                switch tab {
-                case .home: HomeView(tab: $tab, route: $route)
-                case .calendar: CalendarView(route: $route, day: $calendarDay)
-                case .together: TogetherView(route: $route)
-                case .us: UsView(route: $route, who: $wishOwner)
+                switch page {
+                case .home: HomeView(tab: legacyTab, route: $route)
+                case .archive: HistoryPage()
+                case .week: WeekPage()
+                case .month: MonthPage()
+                case .invites: InvitesPage()
+                case .watch: WatchPage(route: $route)
+                case .books: BooksPage()
+                case .wishes: UsView(route: $route, who: $wishOwner)
+                case .me: MePage(page: $page) { menu = .settings }
+                case .finance: FinancePage()
+                case .games: ScrollView { VStack(alignment: .leading, spacing: 14) { PageTitle(plain: "Ігри", italic: "для двох"); EmptyCard(text: "Картки й інші ігри переїдуть сюди згодом.") }.padding(.horizontal, 18).padding(.top, 8) }.background(Theme.cream.ignoresSafeArea())
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.blurReplace)
+            .animation(.easeInOut(duration: 0.25), value: page)
 
-            NavDock(tab: $tab, calendarDay: $calendarDay, wishOwner: $wishOwner,
-                    onAdd: { showAdd = true }, onMenu: { menu = $0 })
+            WaveBar(page: $page, sections: sections, onAdd: { showAdd = true },
+                    onSheet: { id in menu = id == "code" ? .code : .settings })
+        }
+        .overlay(alignment: .topTrailing) {
+            BellButton(unread: store.unread) { menu = .notifications }
+                .padding(.trailing, 16).padding(.top, 4)
         }
         .environmentObject(store)
         .ignoresSafeArea(.keyboard)
@@ -80,7 +121,7 @@ struct MainView: View {
         }
         .sheet(item: $route) { r in
             switch r {
-            case .invite: InviteEditor(existing: nil)
+            case .invite: InviteBooking(start: .blank)
             case .event: EventEditor(existing: nil)
             case .watchSearch: WatchSearchView(sourceUrl: nil)
             case .wish: WishEditor()
@@ -90,12 +131,21 @@ struct MainView: View {
         .task {
             Reminders.askPermission()
             await store.refreshAll()
+            await countFree()
         }
-        .onChange(of: phase) { _, p in if p == .active { Task { await store.refreshAll() } } }
+        .onChange(of: phase) { _, p in if p == .active { Task { await store.refreshAll(); await countFree() } } }
         .onChange(of: state.pendingShare) { _, u in
             if let u { route = .share(u); state.pendingShare = nil }
         }
         .environmentObject(store)
+    }
+
+    /// Free evenings left this week — the note on the calendar pill.
+    private func countFree() async {
+        let mon = Evening.monday(of: Date())
+        let sun = Dock.calendar.date(byAdding: .day, value: 6, to: mon) ?? mon
+        guard let days = try? await API.current().availability(from: Evening.iso(mon), to: Evening.iso(sun)) else { return }
+        freeTonight = days.filter { $0.isFree && $0.date >= Evening.iso(Date()) }.count
     }
 }
 

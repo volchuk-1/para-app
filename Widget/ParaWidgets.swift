@@ -68,7 +68,7 @@ struct PingLiveActivity: Widget {
                 Image(systemName: "heart.fill").foregroundStyle(.pink)
                 Text(context.state.label).font(.headline)
                 Spacer()
-                Text(timerInterval: Date.countdown(to: context.state.endsAt), countsDown: true)
+                Text(timerInterval: Date.countdown(to: context.state.endsAt), countsDown: true).opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час!") } }
                     .monospacedDigit()
                     .font(.title3.bold())
             }
@@ -82,13 +82,13 @@ struct PingLiveActivity: Widget {
                         .lineLimit(1).fixedSize(horizontal: true, vertical: false).padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(timerInterval: Date.countdown(to: context.state.endsAt), countsDown: true)
+                    Text(timerInterval: Date.countdown(to: context.state.endsAt), countsDown: true).opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час!") } }
                         .monospacedDigit()
                 }
             } compactLeading: {
                 Image(systemName: "heart.fill").foregroundStyle(.pink)
             } compactTrailing: {
-                Text(timerInterval: Date.countdown(to: context.state.endsAt), countsDown: true)
+                Text(timerInterval: Date.countdown(to: context.state.endsAt), countsDown: true).opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час!") } }
                     .monospacedDigit()
                     .frame(width: 44)
             } minimal: {
@@ -115,7 +115,7 @@ struct DateLiveActivity: Widget {
                     }
                 }
                 Spacer()
-                Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true)
+                Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true).opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час іти ❤").fixedSize() } }
                     .monospacedDigit().font(.title2.bold()).foregroundStyle(cream)
                     .multilineTextAlignment(.trailing).frame(maxWidth: 110)
             }
@@ -129,7 +129,7 @@ struct DateLiveActivity: Widget {
                         .lineLimit(1).minimumScaleFactor(0.7).padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true).monospacedDigit()
+                    Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true).opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час іти ❤").fixedSize() } }.monospacedDigit()
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if !context.attributes.place.isEmpty { Text(context.attributes.place).font(.caption) }
@@ -137,7 +137,7 @@ struct DateLiveActivity: Widget {
             } compactLeading: {
                 Image(systemName: "heart.fill").foregroundStyle(.pink)
             } compactTrailing: {
-                Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true)
+                Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true).opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час іти ❤").fixedSize() } }
                     .monospacedDigit().frame(width: 52)
             } minimal: {
                 Image(systemName: "heart.fill").foregroundStyle(.pink)

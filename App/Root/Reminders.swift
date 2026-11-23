@@ -52,7 +52,11 @@ enum LiveDates {
             if running.contains(e.id) { continue }
             let attrs = DateAttributes(eventId: e.id, title: e.title, place: e.place ?? "")
             let state = DateAttributes.ContentState(startsAt: e.startsAt)
-            _ = try? Activity.request(attributes: attrs, content: .init(state: state, staleDate: e.startsAt.addingTimeInterval(3600)))
+            _ = try? Activity.request(attributes: attrs, content: .init(state: state, staleDate: e.startsAt))
+        }
+        // Probe countdowns from Diagnostics that already ran out.
+        for a in Activity<PingAttributes>.activities where a.content.state.endsAt < now {
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
         }
         // End countdowns of cancelled / past events.
         for a in Activity<DateAttributes>.activities {

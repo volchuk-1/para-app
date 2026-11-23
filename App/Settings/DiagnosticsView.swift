@@ -71,7 +71,7 @@ struct DiagnosticsView: View {
         let state = PingAttributes.ContentState(endsAt: Date().addingTimeInterval(600), label: "Побачення")
         do {
             _ = try Activity.request(attributes: PingAttributes(title: "Проба"),
-                                     content: .init(state: state, staleDate: nil))
+                                     content: .init(state: state, staleDate: state.endsAt))
             status = "✓ Відлік запущено. Заблокуй екран або вийди на головний: має бути в Dynamic Island."
         } catch {
             status = "✗ Live Activity: \(error.localizedDescription)"

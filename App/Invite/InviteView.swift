@@ -119,6 +119,12 @@ struct InviteView: View {
                         .padding(.horizontal, 22).frame(height: 54)
                         .background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream)
                 }
+            } else if inv.status == .accepted, let buy = inv.buyUrl?.asURL {
+                Button { openURL(buy) } label: {
+                    Label("Купити квитки", systemImage: "ticket.fill").font(.system(size: 15, weight: .semibold))
+                        .padding(.horizontal, 22).frame(height: 54)
+                        .background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream)
+                }
             } else {
                 Text(badge).font(.system(size: 14, weight: .semibold))
                     .padding(.horizontal, 18).frame(height: 54)
