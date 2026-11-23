@@ -52,4 +52,12 @@ final class ReviewFixTests: XCTestCase {
         XCTAssertTrue(APIError.other("CLOSED").localizedDescription.contains("У мене є код"))
         XCTAssertEqual(APIError.other("XYZ").localizedDescription, "Помилка: XYZ.")
     }
+
+    /// «Хто ти?» data decodes.
+    func testLookupDecodes() throws {
+        let r = try API.decoder.decode(LookupResult.self, from: Data(#"{"members":[{"id":"a","name":"Віктор","role":"m","connected":true},{"id":"b","name":"Дарина","role":"f","connected":false}],"suggested":"b"}"#.utf8))
+        XCTAssertEqual(r.members.count, 2)
+        XCTAssertEqual(r.suggested, "b")
+        XCTAssertFalse(r.members[1].connected)
+    }
 }

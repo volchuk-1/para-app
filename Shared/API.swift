@@ -163,7 +163,8 @@ actor API {
     // MARK: Pair
 
     struct CreateBody: Encodable { let myName: String; let partnerName: String; let myRole: String }
-    struct JoinBody: Encodable { let code: String; let name: String? }
+    struct JoinBody: Encodable { let code: String; let name: String?; var memberId: String? = nil }
+    struct CodeBody: Encodable { let code: String }
     struct DeviceCodeBody: Encodable { let memberId: String }
     struct NameBody: Encodable { let name: String }
 
@@ -171,9 +172,17 @@ actor API {
         try await send("POST", "/pair/create", CreateBody(myName: myName, partnerName: partnerName, myRole: myRole))
     }
 
-    func join(code: String, name: String?) async throws -> PairResult {
-        try await send("POST", "/pair/join", JoinBody(code: code, name: name))
+    func join(code: String, name: String?, memberId: String? = nil) async throws -> PairResult {
+        try await send("POST", "/pair/join", JoinBody(code: code, name: name, memberId: memberId))
     }
+
+    /// Who is behind a couple code — for the «Хто ти?» step.
+    func lookup(code: String) async throws -> LookupResult {
+        try await send("POST", "/pair/lookup", CodeBody(code: code))
+    }
+
+    func coupleCode() async throws -> String { (try await get("/pair/code") as CodeResult).pairCode }
+    func newCoupleCode() async throws -> String { (try await send("POST", "/pair/code/new", Empty()) as CodeResult).pairCode }
 
     func me() async throws -> MeResult { try await get("/me") }
 

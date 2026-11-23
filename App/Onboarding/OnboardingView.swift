@@ -124,7 +124,7 @@ private struct PairCodeView: View {
                 .font(.system(size: 46, weight: .bold, design: .monospaced))
                 .tracking(4)
                 .textSelection(.enabled)
-            Text("Код діє 24 години і спрацює один раз. Надішли його \(result.partner?.name ?? "партнеру") — у DaVincit треба натиснути «У мене є код».")
+            Text("Це постійний код вашої пари — для вас обох і для будь-якого пристрою. У DaVincit треба натиснути «У мене є код».")
                 .font(.system(size: 15)).opacity(0.85)
             Spacer()
             ShareLink(item: "Код для DaVincit: \(result.pairCode ?? "")") {
@@ -148,40 +148,67 @@ private struct JoinPairView: View {
     @Binding var step: OnboardingView.Step
     @State private var code = ""
     @State private var name = ""
+    @State private var lookup: LookupResult?
     @State private var busy = false
     @State private var error: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            BackButton { step = .start }
-            Text("Приєднуємось").font(.serif(34, .bold))
-            Text("Введи код, який тобі надіслали. Якщо пару вже створено в Telegram — код для цього телефона там: Налаштування → «Код для мого iPhone».")
-                .font(.system(size: 15)).opacity(0.8)
-                .fixedSize(horizontal: false, vertical: true)
-            inputField("Код, наприклад ABC 234", $code)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .font(.system(size: 20, weight: .semibold, design: .monospaced))
-            inputField("Твоє ім'я (якщо треба виправити)", $name)
-            if let error { Text(error).font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.biscuit) }
-            Spacer()
-            Button {
-                Task { await join() }
-            } label: {
-                if busy { ProgressView().tint(Theme.espresso) } else { Text("Приєднатися") }
+            BackButton { if lookup != nil { lookup = nil } else { step = .start } }
+            if let lookup {
+                Text("Хто ти?").font(.serif(34, .bold))
+                Text("Код підходить. Обери себе — і цей телефон приєднається до пари.")
+                    .font(.system(size: 15)).opacity(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let error { Text(error).font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.biscuit) }
+                Spacer()
+                ForEach(lookup.members) { m in
+                    Button {
+                        Task { await join(as: m) }
+                    } label: {
+                        Text(m.connected ? "\(m.name) · уже підключено" : m.name)
+                    }
+                    .buttonStyle(PillButtonStyle(fill: m.id == lookup.suggested ? Theme.cream : Theme.oliveDeep,
+                                                 text: m.id == lookup.suggested ? Theme.espresso : Theme.cream))
+                    .disabled(busy)
+                }
+            } else {
+                Text("Приєднуємось").font(.serif(34, .bold))
+                Text("Введи код пари. Він постійний і для вас обох — бот DaVincit надіслав його в Telegram, а ще він є в Налаштуваннях.")
+                    .font(.system(size: 15)).opacity(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
+                inputField("Код, наприклад ABC 234", $code)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                inputField("Твоє ім'я (якщо треба виправити)", $name)
+                if let error { Text(error).font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.biscuit) }
+                Spacer()
+                Button {
+                    Task { await find() }
+                } label: {
+                    if busy { ProgressView().tint(Theme.espresso) } else { Text("Далі") }
+                }
+                .buttonStyle(PillButtonStyle(fill: Theme.cream, text: Theme.espresso))
+                .disabled(busy || code.filter { !$0.isWhitespace }.count < 6)
             }
-            .buttonStyle(PillButtonStyle(fill: Theme.cream, text: Theme.espresso))
-            .disabled(busy || code.filter { !$0.isWhitespace }.count < 6)
         }
         .padding(24)
     }
 
-    private func join() async {
+    private func find() async {
+        busy = true; error = nil
+        defer { busy = false }
+        do { lookup = try await API.current().lookup(code: code) }
+        catch { self.error = error.localizedDescription }
+    }
+
+    private func join(as m: LookupMember) async {
         busy = true; error = nil
         defer { busy = false }
         do {
             let trimmed = name.trimmingCharacters(in: .whitespaces)
-            let r = try await API.current().join(code: code, name: trimmed.isEmpty ? nil : trimmed)
+            let r = try await API.current().join(code: code, name: trimmed.isEmpty ? nil : trimmed, memberId: m.id)
             state.paired(r)
         } catch {
             self.error = error.localizedDescription

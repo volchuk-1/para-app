@@ -5,7 +5,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var server = KeyStore.serverURL.absoluteString
-    @State private var code: PairCode?
+    @State private var code: String?
     @State private var message: String?
     @State private var confirmSignOut = false
 
@@ -18,19 +18,16 @@ struct SettingsView: View {
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || name == state.me?.name)
                 }
                 Section {
-                    if let p = state.partner {
-                        Button("Новий код для телефона: \(p.name)") { Task { await newCode(for: p) } }
-                    }
-                    if let me = state.me {
-                        Button("Новий код для мого іншого телефона") { Task { await newCode(for: me) } }
-                    }
                     if let code {
-                        Text(code.pairCode)
+                        Text(code)
                             .font(.system(size: 28, weight: .bold, design: .monospaced))
                             .textSelection(.enabled)
-                        ShareLink(item: "Код для DaVincit: \(code.pairCode)")
+                        ShareLink(item: "Код пари в DaVincit: \(code)")
+                        Button("Змінити код (старий перестане працювати)", role: .destructive) { Task { await renew() } }
+                    } else {
+                        Button("Показати код пари") { Task { await loadCode() } }
                     }
-                } header: { Text("Пристрої") } footer: { Text("Код діє 24 години і спрацює один раз.") }
+                } header: { Text("Код пари") } footer: { Text("Для вас обох і для будь-якого пристрою: «У мене є код» → обрати себе.") }
                 Section("Сповіщення") {
                     NavigationLink("Перевірити push і віджети") { DiagnosticsView() }
                 }
@@ -67,8 +64,13 @@ struct SettingsView: View {
         catch { message = error.localizedDescription }
     }
 
-    private func newCode(for m: Member) async {
-        do { code = try await state.api.deviceCode(for: m.id); message = nil }
+    private func loadCode() async {
+        do { code = try await state.api.coupleCode(); message = nil }
+        catch { message = error.localizedDescription }
+    }
+
+    private func renew() async {
+        do { code = try await state.api.newCoupleCode(); message = "Новий код створено" }
         catch { message = error.localizedDescription }
     }
 }

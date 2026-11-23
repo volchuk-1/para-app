@@ -26,6 +26,20 @@ struct PairCode: Codable, Equatable {
     let pairCodeExpiresAt: Date
 }
 
+struct LookupMember: Codable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let role: String
+    let connected: Bool
+}
+
+struct LookupResult: Codable, Equatable {
+    let members: [LookupMember]
+    let suggested: String?
+}
+
+struct CodeResult: Codable, Equatable { let pairCode: String }
+
 struct Empty: Codable {}
 
 /// Marker type: perform() returns the bytes as they came.
