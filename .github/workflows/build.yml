@@ -18,6 +18,13 @@ jobs:
           brew install xcodegen
           xcodegen generate
 
+      - name: Unit tests (simulator)
+        run: |
+          set -o pipefail
+          SIM=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone 1[5-7][^(]*' | sed 's/ *$//')
+          echo "Simulator: $SIM"
+          xcodebuild test -project Para.xcodeproj -scheme Para             -destination "platform=iOS Simulator,name=$SIM"             CODE_SIGNING_ALLOWED=NO 2>&1 | grep -E "Test Case|error:|failed|passed|Executed|\*\* TEST" | tail -n 80
+
       - name: Build (unsigned)
         run: |
           set -o pipefail

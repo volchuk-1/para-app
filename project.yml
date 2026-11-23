@@ -20,12 +20,16 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.volchuk.para
-        INFOPLIST_KEY_CFBundleDisplayName: Двоє
+        INFOPLIST_KEY_CFBundleDisplayName: DaVincit
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Двоє
-        UILaunchScreen: {}
+        CFBundleDisplayName: DaVincit
+        UILaunchScreen:
+          UIColorName: ""
+        CFBundleURLTypes:
+          - CFBundleURLName: com.volchuk.para
+            CFBundleURLSchemes: [davincit]
         NSSupportsLiveActivities: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
     entitlements:
@@ -44,16 +48,26 @@ targets:
     info:
       path: Widget/Info.plist
       properties:
-        CFBundleDisplayName: Двоє
+        CFBundleDisplayName: DaVincit
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
       path: Widget/ParaWidget.entitlements
       properties:
         com.apple.security.application-groups: [group.com.volchuk.para]
+  ParaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.volchuk.para.tests
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   Para:
     build:
       targets:
         Para: all
         ParaWidget: all
+    test:
+      targets: [ParaTests]
