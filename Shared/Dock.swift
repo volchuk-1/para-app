@@ -68,3 +68,30 @@ extension API {
     func notifications() async throws -> NotificationsResult { try await get("/notifications") }
     func markNotificationsRead() async throws { try await send("POST", "/notifications/read", Empty()) }
 }
+
+/// «У кіно в Україні з 17 грудня» for movies that are not out yet.
+enum Release {
+    static func day(_ s: String?) -> Date? {
+        guard let s, s.count == 10 else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = Dock.calendar.timeZone
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: s)
+    }
+
+    static func line(_ s: String?, inUkraine: Bool?, now: Date = Date()) -> String? {
+        guard let d = day(s), d > Dock.calendar.startOfDay(for: now) else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "uk_UA")
+        f.timeZone = Dock.calendar.timeZone
+        f.dateFormat = "d MMMM"
+        return inUkraine == true ? "У кіно в Україні з \(f.string(from: d))" : "Прем'єра \(f.string(from: d)), дата в Україні ще невідома"
+    }
+
+    /// A cinema invitation can't be before the movie is out: that day at 19:00.
+    static func cinemaStart(_ s: String?, now: Date = Date()) -> Date? {
+        guard let d = day(s), d > now else { return nil }
+        return Dock.calendar.date(bySettingHour: 19, minute: 0, second: 0, of: d)
+    }
+}

@@ -103,6 +103,8 @@ struct WatchItem: Codable, Identifiable, Equatable, Hashable {
     let addedBy: String
     var ratings: [String: Int]
     var avg: Double?
+    var releaseDate: String? = nil
+    var releaseInUkraine: Bool? = nil
 
     var kindLabel: String { isAnime ? "Аніме" : (mediaType == "tv" ? "Серіал" : "Фільм") }
     var episodeLabel: String? {

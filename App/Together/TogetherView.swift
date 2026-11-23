@@ -121,6 +121,13 @@ struct WatchDetailView: View {
                     Text(item.title).font(.serif(30, .bold))
                     Text([item.kindLabel, item.year.map(String.init), addedByText].compactMap { $0 }.joined(separator: " · "))
                         .font(.system(size: 14)).foregroundStyle(Theme.muted)
+                    if let r = Release.line(item.releaseDate, inUkraine: item.releaseInUkraine) {
+                        Label(r, systemImage: "ticket")
+                            .font(.system(size: 14, weight: .semibold))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(Theme.tan, in: Capsule())
+                            .foregroundStyle(Theme.coffee)
+                    }
                 }
                 Picker("Статус", selection: Binding(get: { item.status }, set: { s in Task { await patch(status: s) } })) {
                     ForEach(WatchStatus.allCases) { Text($0.label).tag($0) }
@@ -173,7 +180,7 @@ struct WatchDetailView: View {
         }
         .background(Theme.paper.ignoresSafeArea())
         .foregroundStyle(Theme.ink)
-        .sheet(isPresented: $cinema) { InviteEditor(existing: nil, prefillTitle: "Кіно: \(item.title)") }
+        .sheet(isPresented: $cinema) { InviteEditor(existing: nil, prefillTitle: "Кіно: \(item.title)", prefillStart: Release.cinemaStart(item.releaseDate)) }
         .confirmationDialog("Видалити?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Видалити", role: .destructive) { Task { await remove() } }
         }

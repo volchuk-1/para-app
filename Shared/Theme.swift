@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 extension Color {
     init(hex: UInt32, opacity: Double = 1) {
@@ -24,6 +25,21 @@ enum Theme {
     static let ink = Color(hex: 0x2B1B14)
     static let muted = Color(hex: 0x7A6656)
     static let line = Color(hex: 0xDCDAC6)
+    /// Soft brown for fields, form rows and segmented controls (instead of the system grey).
+    static let tan = Color(hex: 0xEBDDCB)
+    static let tanDeep = Color(hex: 0xDCC5A8)
+
+    /// System controls follow the palette: segmented pickers, navigation titles.
+    static func applyAppearance() {
+        let seg = UISegmentedControl.appearance()
+        seg.backgroundColor = UIColor(tan)
+        seg.selectedSegmentTintColor = UIColor(paper)
+        seg.setTitleTextAttributes([.foregroundColor: UIColor(muted)], for: .normal)
+        seg.setTitleTextAttributes([.foregroundColor: UIColor(ink), .font: UIFont.systemFont(ofSize: 14, weight: .semibold)], for: .selected)
+        let nav = UINavigationBar.appearance()
+        nav.titleTextAttributes = [.foregroundColor: UIColor(coffee)]
+        nav.largeTitleTextAttributes = [.foregroundColor: UIColor(coffee)]
+    }
 
     /// Colour of "whose" an event is.
     static func whose(_ role: String?) -> Color {

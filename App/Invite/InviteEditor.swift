@@ -7,6 +7,8 @@ struct InviteEditor: View {
     @Environment(\.dismiss) private var dismiss
     let existing: Event?
     var prefillTitle: String? = nil
+    /// For a movie not out yet: the first evening it is in cinemas.
+    var prefillStart: Date? = nil
     /// Set after the first successful send, so a failed photo upload never creates a second invitation.
     @State private var createdId: String?
 
@@ -23,7 +25,7 @@ struct InviteEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            SoftForm {
                 Section {
                     TextField("Що (вечеря на даху, кіно…)", text: $title)
                     DatePicker("Коли", selection: $start, in: Date()...)
@@ -66,6 +68,7 @@ struct InviteEditor: View {
 
     private func load() {
         if let t = prefillTitle, title.isEmpty { title = t }
+        if let s = prefillStart, existing == nil { start = s }
         guard let e = existing else { return }
         title = e.title; start = e.startsAt; place = e.place ?? ""; mapUrl = e.mapUrl ?? ""
         dress = e.invitation?.dress ?? ""; message = e.invitation?.message ?? ""

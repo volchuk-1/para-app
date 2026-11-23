@@ -41,4 +41,20 @@ final class DockTests: XCTestCase {
         XCTAssertEqual(r.unread, 1)
         XCTAssertEqual(r.items.first?.title, "Дарина: нове бажання")
     }
+
+    func testReleaseLineOnlyForMoviesNotOutYet() {
+        let now = date("2026-11-23T10:00:00Z")
+        XCTAssertEqual(Release.line("2026-12-17", inUkraine: true, now: now), "У кіно в Україні з 17 грудня")
+        XCTAssertEqual(Release.line("2026-11-26", inUkraine: false, now: now), "Прем'єра 26 листопада, дата в Україні ще невідома")
+        XCTAssertNil(Release.line("2026-11-01", inUkraine: true, now: now))
+        XCTAssertNil(Release.line(nil, inUkraine: nil, now: now))
+    }
+
+    func testCinemaInvitationStartsOnReleaseEvening() {
+        let now = date("2026-11-23T10:00:00Z")
+        let s = Release.cinemaStart("2026-12-17", now: now)!
+        XCTAssertEqual(cal.component(.day, from: s), 17)
+        XCTAssertEqual(cal.component(.hour, from: s), 19)
+        XCTAssertNil(Release.cinemaStart("2026-11-01", now: now))
+    }
 }

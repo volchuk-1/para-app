@@ -6,11 +6,14 @@ struct DaVincitApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var state = AppState()
 
+    init() { Theme.applyAppearance() }
+
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(state)
                 .tint(Theme.olive)
+                .preferredColorScheme(.light)
                 .onOpenURL { state.handle(url: $0) }
         }
     }

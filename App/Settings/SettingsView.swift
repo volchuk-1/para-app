@@ -11,7 +11,7 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            SoftForm {
                 Section("Ти") {
                     TextField("Ім'я", text: $name)
                     Button("Зберегти ім'я") { Task { await rename() } }

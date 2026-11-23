@@ -79,6 +79,7 @@ struct PingLiveActivity: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Label(context.state.label, systemImage: "heart.fill")
+                        .lineLimit(1).fixedSize(horizontal: true, vertical: false).padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(timerInterval: Date.countdown(to: context.state.endsAt), countsDown: true)
@@ -124,7 +125,8 @@ struct DateLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(context.attributes.title, systemImage: "heart.fill").lineLimit(1)
+                    Label(context.attributes.title, systemImage: "heart.fill")
+                        .lineLimit(1).minimumScaleFactor(0.7).padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true).monospacedDigit()

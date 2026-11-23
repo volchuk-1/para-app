@@ -122,6 +122,16 @@ struct Banner: View {
 }
 
 /// Initial-letter avatar: coffee for him, olive for her.
+/// A Form in the palette: cream page, soft brown rows instead of grey.
+struct SoftForm<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        Form { Group { content() }.listRowBackground(Theme.tan) }
+            .scrollContentBackground(.hidden)
+            .background(Theme.cream.ignoresSafeArea())
+    }
+}
+
 struct Avatar: View {
     let member: Member?
     var size: CGFloat = 26

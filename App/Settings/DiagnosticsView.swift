@@ -29,7 +29,7 @@ struct DiagnosticsView: View {
     }
 
     var body: some View {
-            Form {
+            SoftForm {
                 Section {
                     Button("Перевірити push", action: { Task { await probePush() } })
                     if !pushResult.isEmpty {

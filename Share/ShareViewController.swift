@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
+        overrideUserInterfaceStyle = .light
+        Theme.applyAppearance()
         view.backgroundColor = UIColor(red: 0xF9 / 255, green: 0xF6 / 255, blue: 0xEE / 255, alpha: 1)
         let items = extensionContext?.inputItems as? [NSExtensionItem] ?? []
         Task { @MainActor in

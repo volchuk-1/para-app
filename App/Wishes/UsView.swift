@@ -186,7 +186,7 @@ struct WishEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            SoftForm {
                 Section {
                     TextField("Посилання на товар", text: $url)
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()

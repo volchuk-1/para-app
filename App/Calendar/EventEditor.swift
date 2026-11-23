@@ -19,7 +19,7 @@ struct EventEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            SoftForm {
                 Section {
                     TextField("Назва", text: $title)
                     Picker("Чиє", selection: $ours) {
