@@ -164,6 +164,17 @@ actor API {
         try await send("POST", "/pair/device-code", DeviceCodeBody(memberId: memberId))
     }
 
+    // MARK: Push probe
+
+    struct TokenBody: Encodable { let token: String }
+    struct PushStatus: Decodable { let myTokens: Int; let serverCanSend: Bool }
+
+    func sendPushToken(_ token: String) async throws {
+        try await send("POST", "/push/token", TokenBody(token: token))
+    }
+
+    func pushStatus() async throws -> PushStatus { try await get("/push/status") }
+
     func rename(_ name: String) async throws -> Member {
         struct R: Decodable { let me: Member }
         let r: R = try await send("PATCH", "/me", NameBody(name: name))

@@ -36,6 +36,7 @@ targets:
       path: App/Para.entitlements
       properties:
         com.apple.security.application-groups: [group.com.volchuk.para]
+        aps-environment: development
     dependencies:
       - target: ParaWidget
   ParaWidget:
