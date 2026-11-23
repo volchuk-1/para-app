@@ -86,13 +86,21 @@ struct HomeView: View {
                 .buttonStyle(.plain)
             }
         case .watching(let items):
-            HStack(spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 ForEach(items) { w in
-                    Button { tab = .together } label: {
-                        MuseumTile(fill: Theme.sage, tag: "Дивимось", title: w.title,
-                                   meta: w.episodeLabel ?? (w.mediaType == "tv" ? "серіал" : "фільм"), footer: nil)
+                    MuseumTile(fill: Theme.sage, tag: "Дивимось", title: w.title,
+                               meta: w.episodeLabel ?? (w.mediaType == "tv" ? "серіал" : "фільм"), footer: nil) {
+                        if w.mediaType == "tv" {
+                            Button { Task { await nextEpisode(w.id) } } label: {
+                                Label("+1 серія", systemImage: "plus").font(.system(size: 13, weight: .semibold))
+                                    .padding(.horizontal, 12).frame(height: 34)
+                                    .background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 10)
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .onTapGesture { tab = .together }
                 }
             }
         case .want(let count, let posters):
@@ -117,6 +125,13 @@ struct HomeView: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+    }
+
+    private func nextEpisode(_ id: String) async {
+        await store.run {
+            store.upsert(try await API.current().nextEpisode(id))
+            store.home = try await API.current().home()
         }
     }
 

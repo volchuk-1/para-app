@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// What happens after «Поділитися → DaVincit»: the server decides watch vs wish; we show the result.
 struct ShareFlowView: View {
@@ -11,10 +12,13 @@ struct ShareFlowView: View {
         case added(String)
         case wish(Wish)
         case failed(String)
+        case noKey
+        case offline
     }
     @State private var phase: Phase = .loading
     @State private var query = ""
     @State private var busy = false
+    @State private var copied = false
     private var me: Member? { KeyStore.cachedMe?.me }
     private var partner: Member? { KeyStore.cachedMe?.partner }
 
@@ -42,6 +46,22 @@ struct ShareFlowView: View {
             HStack(spacing: 10) { ProgressView(); Text("Розпізнаю…") }.padding(.top, 20)
         case .failed(let msg):
             Text(msg).font(.system(size: 16)).padding(.top, 10)
+        case .offline:
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Немає зв'язку з сервером.").font(.system(size: 16, weight: .semibold))
+                Button("Спробувати ще раз") { phase = .loading; Task { await start() } }
+                    .buttonStyle(PillButtonStyle(fill: Theme.olive, text: Theme.cream))
+            }
+        case .noKey:
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Це вікно не бачить вашої пари.").font(.system(size: 16, weight: .semibold))
+                Text("Так буває, якщо SideStore не дав спільної папки. Скопіюй посилання, відкрий DaVincit → «+» → «Бажання» або «Фільм / серіал» і встав його.")
+                    .font(.system(size: 14)).foregroundStyle(Theme.muted)
+                Button { UIPasteboard.general.url = url; copied = true } label: {
+                    Label(copied ? "Скопійовано ✓" : "Скопіювати посилання", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(PillButtonStyle(fill: Theme.olive, text: Theme.cream))
+            }
         case .added(let title):
             VStack(alignment: .leading, spacing: 8) {
                 Label("Додано у «Дивимось»", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.olive)
@@ -86,13 +106,15 @@ struct ShareFlowView: View {
     }
 
     private func start() async {
-        guard KeyStore.deviceKey != nil else { phase = .failed("Спершу відкрий DaVincit і створи пару."); return }
+        guard KeyStore.deviceKey != nil else { phase = .noKey; return }
         do {
             let r = try await API.current().share(url)
             if r.kind == "wish", let w = r.wish { phase = .wish(w) }
             else { phase = .watch(caption: r.caption, candidates: r.candidates ?? []) }
         } catch APIError.offline {
-            phase = .failed("Немає зв'язку, спробуй пізніше.")
+            phase = .offline
+        } catch APIError.unauthorized {
+            phase = .noKey
         } catch {
             phase = .failed(error.localizedDescription)
         }

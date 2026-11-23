@@ -3,7 +3,16 @@ import ActivityKit
 
 /// Shared between the app and its extensions.
 enum Shared {
-    static let group = "group.com.volchuk.para"
+    static let defaultGroup = "group.com.volchuk.para"
+    /// SideStore re-signs with a renamed group and lists the real name in ALTAppGroups.
+    static var group: String { groupID(info: Bundle.main.infoDictionary ?? [:]) }
+    static func groupID(info: [String: Any]) -> String {
+        (info["ALTAppGroups"] as? [String])?.first ?? defaultGroup
+    }
+    /// True only if iOS really gives this app the shared container.
+    static var groupWorks: Bool {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) != nil
+    }
     static let defaultServer = URL(string: "https://davincit-167-233-130-88.sslip.io")!
     /// Kept for the diagnostics widget: any URL that answers 200.
     static var server: URL { KeyStore.serverURL.appendingPathComponent("health") }

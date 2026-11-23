@@ -18,6 +18,13 @@ enum Countdown {
     static let kyiv = TimeZone(identifier: "Europe/Kyiv") ?? .current
 }
 
+enum EventTimes {
+    /// An end before the start becomes start + 2 hours.
+    static func clampedEnd(start: Date, end: Date) -> Date {
+        end < start ? start.addingTimeInterval(7200) : end
+    }
+}
+
 enum ShareRouting {
     /// First web link inside shared text («Дивись це https://vm.tiktok.com/… 🔥»).
     static func firstURL(in text: String) -> URL? {

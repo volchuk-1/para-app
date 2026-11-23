@@ -54,7 +54,7 @@ struct DiagnosticsView: View {
     }
 
     private func save() {
-        guard let defaults = UserDefaults(suiteName: Shared.group) else {
+        guard Shared.groupWorks, let defaults = UserDefaults(suiteName: Shared.group) else {
             status = "✗ Спільна папка (App Group) недоступна"
             return
         }

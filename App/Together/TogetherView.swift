@@ -107,6 +107,7 @@ struct WatchDetailView: View {
     @Environment(\.openURL) private var openURL
     @State var item: WatchItem
     @State private var confirmDelete = false
+    @State private var cinema = false
 
     init(item: WatchItem) { _item = State(initialValue: item) }
 
@@ -118,7 +119,7 @@ struct WatchDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
                 VStack(alignment: .leading, spacing: 6) {
                     Text(item.title).font(.serif(30, .bold))
-                    Text([item.kindLabel, item.year.map(String.init)].compactMap { $0 }.joined(separator: " · "))
+                    Text([item.kindLabel, item.year.map(String.init), addedByText].compactMap { $0 }.joined(separator: " · "))
                         .font(.system(size: 14)).foregroundStyle(Theme.muted)
                 }
                 Picker("Статус", selection: Binding(get: { item.status }, set: { s in Task { await patch(status: s) } })) {
@@ -155,6 +156,12 @@ struct WatchDetailView: View {
                     }
                     if let avg = item.avg { Text("Разом: \(String(format: "%.1f", avg))").font(.system(size: 14, weight: .semibold)) }
                 }
+                if item.mediaType == "movie" {
+                    Button { cinema = true } label: {
+                        Label("Хочемо в кіно", systemImage: "ticket").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PillButtonStyle(fill: Theme.olive, text: Theme.cream))
+                }
                 if let src = item.sourceUrl?.asURL {
                     Button { openURL(src) } label: { Label("Відкрити відео, звідки додали", systemImage: "play.rectangle") }
                 }
@@ -166,9 +173,16 @@ struct WatchDetailView: View {
         }
         .background(Theme.paper.ignoresSafeArea())
         .foregroundStyle(Theme.ink)
+        .sheet(isPresented: $cinema) { InviteEditor(existing: nil, prefillTitle: "Кіно: \(item.title)") }
         .confirmationDialog("Видалити?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Видалити", role: .destructive) { Task { await remove() } }
         }
+    }
+
+    private var addedByText: String? {
+        if item.addedBy == state.me?.id { return "додав(ла) ти" }
+        if let p = state.partner, item.addedBy == p.id { return "додав(ла) \(p.name)" }
+        return nil
     }
 
     private func patch(status: WatchStatus) async {
@@ -197,6 +211,7 @@ struct WatchSearchView: View {
     @State private var query = ""
     @State private var results: [Candidate] = []
     @State private var busy = false
+    @State private var searched = false
 
     var body: some View {
         NavigationStack {
@@ -204,7 +219,7 @@ struct WatchSearchView: View {
                 ForEach(results) { c in
                     Button { Task { await add(c) } } label: { CandidateRow(c: c) }
                 }
-                if results.isEmpty && !query.isEmpty && !busy {
+                if results.isEmpty && searched && !busy {
                     Text("Нічого не знайшлося. Спробуй назву англійською.").foregroundStyle(Theme.muted)
                 }
                 if let e = store.error { Text(e).foregroundStyle(Theme.coffee) }
@@ -222,6 +237,7 @@ struct WatchSearchView: View {
     private func search() async {
         busy = true; defer { busy = false }
         await store.run { results = try await API.current().search(query) }
+        searched = true
     }
 
     private func add(_ c: Candidate) async {

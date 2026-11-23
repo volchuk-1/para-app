@@ -12,7 +12,7 @@ enum Reminders {
             center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(prefix) })
             let now = Date()
             let soon = events.filter { $0.isOurs && $0.startsAt > now && $0.startsAt < now.addingTimeInterval(30 * 86400) }
-                .filter { $0.invitation == nil || $0.invitation?.status == .accepted }
+                .filter { $0.invitation?.status != .cancelled }
                 .prefix(30)
             for e in soon {
                 add(center, id: "\(prefix)\(e.id)-1h", at: e.startsAt.addingTimeInterval(-3600),

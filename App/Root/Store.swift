@@ -16,16 +16,18 @@ final class Store: ObservableObject {
         events = Cache.load([Event].self, "events") ?? []
         watch = Cache.load([WatchItem].self, "watch") ?? []
         wishes = Cache.load([Wish].self, "wishes") ?? []
+        home = HomeCache.load()
     }
 
     func refreshAll() async {
         await run {
-            async let h = self.api.home()
+            async let h = self.api.homeRaw()
             async let e = self.api.events(from: Date().addingTimeInterval(-7 * 86400), to: Date().addingTimeInterval(120 * 86400))
             async let w = self.api.watchList()
             async let ws = self.api.wishes()
             let (home, events, watch, wishes) = try await (h, e, w, ws)
-            self.home = home
+            self.home = home.0
+            HomeCache.save(home.1)
             self.setEvents(events)
             self.watch = watch; Cache.save(watch, "watch")
             self.wishes = wishes; Cache.save(wishes, "wishes")
@@ -67,6 +69,7 @@ final class Store: ObservableObject {
             return true
         } catch APIError.offline {
             offline = true
+            error = APIError.offline.localizedDescription + " Зміни не збережено."
             return false
         } catch {
             self.error = error.localizedDescription

@@ -6,6 +6,9 @@ struct InviteEditor: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
     let existing: Event?
+    var prefillTitle: String? = nil
+    /// Set after the first successful send, so a failed photo upload never creates a second invitation.
+    @State private var createdId: String?
 
     @State private var title = ""
     @State private var start = Calendar.current.date(bySettingHour: 19, minute: 0, second: 0,
@@ -62,6 +65,7 @@ struct InviteEditor: View {
     }
 
     private func load() {
+        if let t = prefillTitle, title.isEmpty { title = t }
         guard let e = existing else { return }
         title = e.title; start = e.startsAt; place = e.place ?? ""; mapUrl = e.mapUrl ?? ""
         dress = e.invitation?.dress ?? ""; message = e.invitation?.message ?? ""
@@ -79,7 +83,13 @@ struct InviteEditor: View {
                                note: nil, dress: dress.isEmpty ? nil : dress, message: message.isEmpty ? nil : message)
         let ok = await store.run {
             let api = API.current()
-            var e = try await (existing == nil ? api.createInvitation(draft) : api.updateEvent(existing!.id, draft))
+            var e: Event
+            if let id = existing?.id ?? createdId {
+                e = try await api.updateEvent(id, draft)
+            } else {
+                e = try await api.createInvitation(draft)
+                createdId = e.id
+            }
             if let jpeg = coverJPEG {
                 try await api.uploadCover(e.id, jpeg: jpeg)
                 e = try await api.events(from: e.startsAt.addingTimeInterval(-60), to: e.startsAt.addingTimeInterval(60))

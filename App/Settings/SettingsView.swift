@@ -44,6 +44,12 @@ struct SettingsView: View {
                 }
                 if let message { Section { Text(message).foregroundStyle(Theme.muted) } }
                 Section {
+                    Text("Дані про фільми й серіали — TMDB (themoviedb.org). Цей застосунок використовує TMDB API, але не схвалений і не сертифікований TMDB.")
+                        .font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    Text("Спільна папка: \(Shared.groupWorks ? "працює" : "недоступна") (\(Shared.group))")
+                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.muted)
+                } header: { Text("Про застосунок") }
+                Section {
                     Button("Вийти з цього телефона", role: .destructive) { confirmSignOut = true }
                 }
             }

@@ -51,11 +51,12 @@ struct EventDraft: Encodable {
         try c.encode(title, forKey: .title)
         try c.encode(startsAt, forKey: .startsAt)
         try c.encode(endsAt, forKey: .endsAt)
-        try c.encodeIfPresent(place, forKey: .place)
-        try c.encodeIfPresent(mapUrl, forKey: .mapUrl)
-        try c.encodeIfPresent(note, forKey: .note)
-        try c.encodeIfPresent(dress, forKey: .dress)
-        try c.encodeIfPresent(message, forKey: .message)
+        // Always sent (null clears a field on the server).
+        try c.encode(place, forKey: .place)
+        try c.encode(mapUrl, forKey: .mapUrl)
+        try c.encode(note, forKey: .note)
+        try c.encode(dress, forKey: .dress)
+        try c.encode(message, forKey: .message)
     }
     private enum CodingKeys: String, CodingKey { case ownerId, title, startsAt, endsAt, place, mapUrl, note, dress, message }
 }
@@ -213,6 +214,15 @@ struct HomeResult: Decodable {
         let c = try decoder.container(keyedBy: K.self)
         greeting = try c.decode(Greeting.self, forKey: .greeting)
         tiles = try c.decode([LossyTile].self, forKey: .tiles).compactMap(\.tile)
+    }
+}
+
+/// Last `/home` answer as raw JSON, so the app opens offline with the same tiles.
+enum HomeCache {
+    private static let key = "cache.homeRaw"
+    static func save(_ raw: Data) { KeyStore.defaults.set(raw, forKey: key) }
+    static func load() -> HomeResult? {
+        KeyStore.defaults.data(forKey: key).flatMap { try? API.decoder.decode(HomeResult.self, from: $0) }
     }
 }
 

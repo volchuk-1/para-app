@@ -130,7 +130,7 @@ struct WishDetailView: View {
                     HStack(spacing: 8) {
                         Text(p).font(.system(size: 22, weight: .bold))
                         if let d = wish.dropPercent, let fp = wish.firstPrice {
-                            Text("було \(Int(fp)) · −\(d)%").font(.system(size: 14)).foregroundStyle(Theme.olive)
+                            Text("було \(fp.formatted(.number.precision(.fractionLength(0...2)))) · −\(d)%").font(.system(size: 14)).foregroundStyle(Theme.olive)
                         }
                     }
                 }

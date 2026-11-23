@@ -82,6 +82,12 @@ actor API {
         let _: Empty = try await request("DELETE", path, body: Optional<Empty>.none)
     }
 
+    /// Raw body of a GET (for caches).
+    func raw(_ path: String) async throws -> Data {
+        let r: RawBody = try await get(path)
+        return r.data
+    }
+
     func upload<T: Decodable>(_ path: String, jpeg: Data, method: String = "PUT") async throws -> T {
         let boundary = "dv-\(UUID().uuidString)"
         var data = Data()
@@ -129,6 +135,7 @@ actor API {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if (200..<300).contains(status) {
+            if T.self == RawBody.self { return RawBody(data: data) as! T }
             if T.self == Empty.self, data.isEmpty || status == 204 { return Empty() as! T }
             do { return try API.decoder.decode(T.self, from: data) } catch { throw APIError.decoding }
         }

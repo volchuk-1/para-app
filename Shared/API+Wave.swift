@@ -4,6 +4,11 @@ import Foundation
 extension API {
     // MARK: Home
     func home() async throws -> HomeResult { try await get("/home") }
+    /// `/home` plus the raw bytes for the offline cache.
+    func homeRaw() async throws -> (HomeResult, Data) {
+        let data = try await raw("/home")
+        do { return (try API.decoder.decode(HomeResult.self, from: data), data) } catch { throw APIError.decoding }
+    }
 
     // MARK: Events
     func events(from: Date, to: Date) async throws -> [Event] {
@@ -54,7 +59,9 @@ extension API {
     func rate(_ id: String, _ score: Int) async throws -> WatchItem { (try await send("PUT", "/watch/\(id)/rating", ScoreBody(score: score)) as WatchResult).item }
     func deleteWatch(_ id: String) async throws { try await delete("/watch/\(id)") }
     func search(_ q: String) async throws -> [Candidate] {
-        let enc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&+=?#")
+        let enc = q.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         return (try await get("/search?q=\(enc)") as CandidatesResult).candidates
     }
 

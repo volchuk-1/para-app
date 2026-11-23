@@ -27,3 +27,10 @@ struct PairCode: Codable, Equatable {
 }
 
 struct Empty: Codable {}
+
+/// Marker type: perform() returns the bytes as they came.
+struct RawBody: Decodable {
+    let data: Data
+    init(data: Data) { self.data = data }
+    init(from decoder: Decoder) throws { data = Data() }
+}

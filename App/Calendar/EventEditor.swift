@@ -31,7 +31,9 @@ struct EventEditor: View {
                 }
                 Section {
                     DatePicker("Початок", selection: $start)
+                        .onChange(of: start) { _, s in end = EventTimes.clampedEnd(start: s, end: end) }
                     Toggle("Є кінець", isOn: $hasEnd)
+                        .onChange(of: hasEnd) { _, on in if on { end = EventTimes.clampedEnd(start: start, end: end) } }
                     if hasEnd { DatePicker("Кінець", selection: $end, in: start...) }
                 }
                 Section {
