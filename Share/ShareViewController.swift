@@ -9,10 +9,12 @@ final class ShareViewController: UIViewController {
         view.backgroundColor = UIColor(red: 0xF9 / 255, green: 0xF6 / 255, blue: 0xEE / 255, alpha: 1)
         let items = extensionContext?.inputItems as? [NSExtensionItem] ?? []
         Task { @MainActor in
-            let url = await ShareExtractor.url(from: items)
+            let safari = await ShareExtractor.safariPage(from: items)
+            let url: URL?
+            if let safari { url = safari.url } else { url = await ShareExtractor.url(from: items) }
             let root: AnyView
             if let url {
-                root = AnyView(ShareFlowView(url: url) { [weak self] in self?.done() })
+                root = AnyView(ShareFlowView(url: url, page: safari?.page) { [weak self] in self?.done() })
             } else {
                 root = AnyView(
                     VStack(spacing: 16) {
@@ -37,6 +39,17 @@ final class ShareViewController: UIViewController {
 }
 
 enum ShareExtractor {
+    /// Safari runs Share/Preprocess.js on the open page and hands back its results as a property list.
+    static func safariPage(from items: [NSExtensionItem]) async -> (url: URL, page: String?)? {
+        for item in items {
+            for p in item.attachments ?? [] where p.hasItemConformingToTypeIdentifier(UTType.propertyList.identifier) {
+                guard let dict = try? await p.loadItem(forTypeIdentifier: UTType.propertyList.identifier) as? [String: Any] else { continue }
+                if let r = ShareRouting.fromSafari(dict[NSExtensionJavaScriptPreprocessingResultsKey] as? [String: Any]) { return r }
+            }
+        }
+        return nil
+    }
+
     /// A web URL attachment, or the first link inside shared text (TikTok shares text + link).
     static func url(from items: [NSExtensionItem]) async -> URL? {
         for item in items {

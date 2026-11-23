@@ -98,4 +98,14 @@ final class WaveOneTests: XCTestCase {
         XCTAssertEqual(ShareRouting.firstURL(in: "https://youtu.be/abc")?.host, "youtu.be")
         XCTAssertNil(ShareRouting.firstURL(in: "без посилання"))
     }
+
+    /// Safari share: the page script result becomes the link plus the product part of the page.
+    func testSafariPreprocessingResult() {
+        let r = ShareRouting.fromSafari(["url": "https://book-ye.com.ua/knyha/", "page": "<title>Книга</title>"])
+        XCTAssertEqual(r?.url.host, "book-ye.com.ua")
+        XCTAssertEqual(r?.page, "<title>Книга</title>")
+        XCTAssertNil(ShareRouting.fromSafari(["url": "javascript:alert(1)"]))
+        XCTAssertNil(ShareRouting.fromSafari(nil))
+        XCTAssertNil(ShareRouting.fromSafari(["url": "https://x.ua/", "page": ""])?.page)
+    }
 }

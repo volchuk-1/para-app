@@ -91,41 +91,71 @@ struct MainView: View {
 }
 
 /// Floating bar: the active tab expands with its name, «+» is a brown circle.
+/// Floating bar with an elastic olive capsule: when you switch tabs the front edge jumps ahead,
+/// the back edge catches up a moment later, so the capsule stretches and springs back.
 struct TabBar: View {
     @Binding var tab: Tab
     var onAdd: () -> Void
+    @State private var lead: CGFloat = 0
+    @State private var trail: CGFloat = 1
+
+    static let slots: [Tab?] = [.home, .calendar, nil, .together, .us]
+    static func slot(_ t: Tab) -> CGFloat { CGFloat(slots.firstIndex(of: t) ?? 0) }
 
     var body: some View {
-        HStack(spacing: 0) {
-            item(.home); item(.calendar)
-            Button(action: onAdd) {
-                Image(systemName: "plus").font(.system(size: 20, weight: .bold))
-                    .frame(width: 48, height: 48)
-                    .background(Theme.coffee, in: Circle())
-                    .foregroundStyle(Theme.cream)
+        GeometryReader { g in
+            let w = g.size.width / CGFloat(Self.slots.count)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Theme.olive)
+                    .frame(width: max(w * (trail - lead) - 8, 0), height: 48)
+                    .offset(x: w * lead + 4)
+                HStack(spacing: 0) {
+                    ForEach(0..<Self.slots.count, id: \.self) { i in
+                        if let t = Self.slots[i] { item(t).frame(width: w) } else { plus.frame(width: w) }
+                    }
+                }
             }
-            .padding(.horizontal, 4)
-            .accessibilityLabel("Додати")
-            item(.together); item(.us)
         }
+        .frame(height: 48)
         .padding(8)
         .background(Theme.paper, in: Capsule())
         .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
+        .onAppear { lead = Self.slot(tab); trail = lead + 1 }
+        .onChange(of: tab) { _, t in move(to: Self.slot(t)) }
+        .sensoryFeedback(.selection, trigger: tab)
     }
 
-    @ViewBuilder private func item(_ t: Tab) -> some View {
-        Button { withAnimation(.snappy) { tab = t } } label: {
-            HStack(spacing: 6) {
-                Image(systemName: t.icon).font(.system(size: 19, weight: .semibold))
-                if tab == t { Text(t.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).fixedSize() }
-            }
-            .padding(.horizontal, tab == t ? 14 : 0)
-            .frame(minWidth: 46, minHeight: 48)
-            .background(tab == t ? Theme.olive : .clear, in: Capsule())
-            .foregroundStyle(tab == t ? Theme.cream : Color(hex: 0x8E9280))
+    private func move(to s: CGFloat) {
+        let goingRight = s > lead
+        let front = Animation.spring(response: 0.28, dampingFraction: 0.62)
+        let back = Animation.spring(response: 0.5, dampingFraction: 0.6)
+        withAnimation(goingRight ? back : front) { lead = s }
+        withAnimation(goingRight ? front : back) { trail = s + 1 }
+    }
+
+    private var plus: some View {
+        Button(action: onAdd) {
+            Image(systemName: "plus").font(.system(size: 20, weight: .bold))
+                .frame(width: 48, height: 48)
+                .background(Theme.coffee, in: Circle())
+                .foregroundStyle(Theme.cream)
         }
-        .frame(maxWidth: tab == t ? nil : .infinity)
+        .accessibilityLabel("Додати")
+    }
+
+    private func item(_ t: Tab) -> some View {
+        Button { tab = t } label: {
+            Image(systemName: t.icon)
+                .font(.system(size: 19, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .contentShape(Rectangle())
+                .foregroundStyle(tab == t ? Theme.cream : Color(hex: 0x8E9280))
+                .animation(.easeInOut(duration: 0.25), value: tab)
+        }
+        .buttonStyle(.plain)
         .accessibilityLabel(t.title)
+        .accessibilityAddTraits(tab == t ? .isSelected : [])
     }
 }
 

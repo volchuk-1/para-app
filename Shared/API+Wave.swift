@@ -48,6 +48,7 @@ extension API {
     struct WatchPatch: Encodable { var status: String?; var season: Int?; var episode: Int? }
     struct ScoreBody: Encodable { let score: Int }
     struct URLBody: Encodable { let url: String }
+    struct ShareBody: Encodable { let url: String; let page: String? }
 
     func watchList() async throws -> [WatchItem] { (try await get("/watch") as WatchList).items }
     func addWatch(_ c: Candidate, sourceUrl: String?) async throws -> WatchItem {
@@ -74,5 +75,7 @@ extension API {
     func deleteWish(_ id: String) async throws { try await delete("/wishes/\(id)") }
 
     // MARK: Share
-    func share(_ url: URL) async throws -> ShareResult { try await send("POST", "/share", URLBody(url: url.absoluteString)) }
+    func share(_ url: URL, page: String? = nil) async throws -> ShareResult {
+        try await send("POST", "/share", ShareBody(url: url.absoluteString, page: page))
+    }
 }

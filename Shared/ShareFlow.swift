@@ -4,6 +4,8 @@ import UIKit
 /// What happens after «Поділитися → DaVincit»: the server decides watch vs wish; we show the result.
 struct ShareFlowView: View {
     let url: URL
+    /// Product part of the page Safari had open (shops that refuse our server).
+    var page: String? = nil
     var onDone: () -> Void
 
     enum Phase {
@@ -108,7 +110,7 @@ struct ShareFlowView: View {
     private func start() async {
         guard KeyStore.deviceKey != nil else { phase = .noKey; return }
         do {
-            let r = try await API.current().share(url)
+            let r = try await API.current().share(url, page: page)
             if r.kind == "wish", let w = r.wish { phase = .wish(w) }
             else { phase = .watch(caption: r.caption, candidates: r.candidates ?? []) }
         } catch APIError.offline {

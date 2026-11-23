@@ -26,6 +26,14 @@ enum EventTimes {
 }
 
 enum ShareRouting {
+    /// What Share/Preprocess.js returns from a Safari page: its address and the product part of the page.
+    static func fromSafari(_ results: [String: Any]?) -> (url: URL, page: String?)? {
+        guard let s = results?["url"] as? String, let url = URL(string: s),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+        let page = (results?["page"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(380_000)) }
+        return (url, page)
+    }
+
     /// First web link inside shared text («Дивись це https://vm.tiktok.com/… 🔥»).
     static func firstURL(in text: String) -> URL? {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }

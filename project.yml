@@ -75,7 +75,9 @@ targets:
           NSExtensionAttributes:
             NSExtensionActivationRule:
               NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
               NSExtensionActivationSupportsText: true
+            NSExtensionJavaScriptPreprocessingFile: Preprocess
     entitlements:
       path: Share/ParaShare.entitlements
       properties:
