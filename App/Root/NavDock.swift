@@ -90,7 +90,7 @@ struct NavDock: View {
 
     private var sectionTitle: String {
         switch tab {
-        case .us: return wishOwner == state.me?.id ? "Мої бажання" : "Бажання \(state.partner?.name ?? "")"
+        case .us: return wishOwner == state.me?.id ? "Мої бажання" : "Бажання · \(state.partner?.name ?? "")"
         default: return tab.title
         }
     }
@@ -312,12 +312,12 @@ private struct MeMenu: View {
                 Avatar(member: me, size: 44)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(me?.name ?? "").font(.system(size: 17, weight: .semibold))
-                    Text("з \(partner?.name ?? "")").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    Text("\(me?.name ?? "") і \(partner?.name ?? "")").font(.system(size: 13)).foregroundStyle(Theme.muted)
                 }
             }
             .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 10)
             row("gift.fill", "Мої бажання", count(me)) { choose(.mine) }
-            row("heart", "Бажання \(partner?.name ?? "")", count(partner)) { choose(.partner) }
+            row("heart", "Бажання · \(partner?.name ?? "")", count(partner)) { choose(.partner) }
             row("bell", "Сповіщення", unread > 0 ? "\(unread)" : nil, red: unread > 0) { choose(.action(.notifications)) }
             Divider().overlay(Theme.line).padding(.horizontal, 12).padding(.vertical, 4)
             row("key", "Код пари", nil) { choose(.action(.code)) }
