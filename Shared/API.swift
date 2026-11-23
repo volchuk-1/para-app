@@ -14,7 +14,17 @@ enum APIError: Error, Equatable, LocalizedError {
         case .notFound: return "Не знайдено."
         case .decoding: return "Незрозуміла відповідь сервера."
         case .server(let code): return "Помилка сервера (\(code))."
-        case .other(let code): return "Помилка: \(code)."
+        case .other(let code):
+            switch code {
+            case "CLOSED": return "Пару вже створено. Натисни «У мене є код» — код для цього телефона є в Telegram-версії: Налаштування → «Код для мого iPhone»."
+            case "TG_TAKEN": return "Цей Telegram уже в парі."
+            case "BAD_DATE": return "Перевір дату й час."
+            case "BAD_URL": return "Посилання не схоже на сайт."
+            case "FORBIDDEN": return "Це може змінити лише власник."
+            case "CANCELLED": return "Запрошення скасоване."
+            case "NOT_JPEG": return "Потрібне фото у форматі JPEG."
+            default: return "Помилка: \(code)."
+            }
         }
     }
 }

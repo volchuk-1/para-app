@@ -78,8 +78,9 @@ private struct CreatePairView: View {
             Text("Створюємо пару").font(.serif(34, .bold))
             Text("Ти отримаєш код. Партнер введе його у своєму DaVincit.")
                 .font(.system(size: 15)).opacity(0.8)
-            TextField("Твоє ім'я", text: $myName).field().textContentType(.givenName)
-            TextField("Ім'я партнера", text: $partnerName).field()
+                .fixedSize(horizontal: false, vertical: true)
+            inputField("Твоє ім'я", $myName).textContentType(.givenName)
+            inputField("Ім'я партнера", $partnerName)
             Picker("Я", selection: $myRole) {
                 Text("Я — він").tag("m")
                 Text("Я — вона").tag("f")
@@ -154,13 +155,14 @@ private struct JoinPairView: View {
         VStack(alignment: .leading, spacing: 14) {
             BackButton { step = .start }
             Text("Приєднуємось").font(.serif(34, .bold))
-            Text("Введи код, який тобі надіслали.").font(.system(size: 15)).opacity(0.8)
-            TextField("Код, наприклад ABC 234", text: $code)
-                .field()
+            Text("Введи код, який тобі надіслали. Якщо пару вже створено в Telegram — код для цього телефона там: Налаштування → «Код для мого iPhone».")
+                .font(.system(size: 15)).opacity(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+            inputField("Код, наприклад ABC 234", $code)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
                 .font(.system(size: 20, weight: .semibold, design: .monospaced))
-            TextField("Твоє ім'я (якщо треба виправити)", text: $name).field()
+            inputField("Твоє ім'я (якщо треба виправити)", $name)
             if let error { Text(error).font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.biscuit) }
             Spacer()
             Button {

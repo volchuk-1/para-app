@@ -46,4 +46,10 @@ final class ReviewFixTests: XCTestCase {
         XCTAssertEqual(EventTimes.clampedEnd(start: start, end: start.addingTimeInterval(-60)), start.addingTimeInterval(7200))
         XCTAssertEqual(EventTimes.clampedEnd(start: start, end: start.addingTimeInterval(600)), start.addingTimeInterval(600))
     }
+
+    /// A closed pair explains what to do instead of showing a code.
+    func testClosedPairMessage() {
+        XCTAssertTrue(APIError.other("CLOSED").localizedDescription.contains("У мене є код"))
+        XCTAssertEqual(APIError.other("XYZ").localizedDescription, "Помилка: XYZ.")
+    }
 }

@@ -85,3 +85,10 @@ struct FieldStyle: ViewModifier {
 extension View {
     func field() -> some View { modifier(FieldStyle()) }
 }
+
+/// Text field whose placeholder stays readable on the light field background.
+func inputField(_ placeholder: String, _ text: Binding<String>) -> some View {
+    TextField("", text: text, prompt: Text(placeholder).foregroundColor(Theme.muted))
+        .field()
+        .tint(Theme.olive)
+}
