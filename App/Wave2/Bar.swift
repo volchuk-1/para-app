@@ -42,6 +42,7 @@ struct WaveBar: View {
     @State private var extraHot: Page?
     @State private var extraFrames: [Page: CGRect] = [:]
     @State private var holdTask: Task<Void, Never>?
+    @State private var holdStart: Date?
     private let spring = Animation.spring(response: 0.48, dampingFraction: 0.72)
     /// Pages that do not fit the row: a long press on the circle shows them above it.
     private let extras: [String: [(Page, String, String)]] = [
@@ -118,19 +119,24 @@ struct WaveBar: View {
                 item(s)
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
                         .onChanged { v in
-                            if holdTask == nil && extrasFor == nil, extras[s.id] != nil {
-                                holdTask = Task { @MainActor in
-                                    try? await Task.sleep(for: .milliseconds(70))
-                                    if !Task.isCancelled { Haptic.hit(.heavy); withAnimation(.spring(response: 0.2, dampingFraction: 0.74)) { extrasFor = s.id } }
-                                }
+                            // shown the moment the finger lands on the circle
+                            if holdStart == nil && extrasFor == nil, extras[s.id] != nil {
+                                holdStart = Date()
+                                Haptic.hit(.heavy)
+                                withAnimation(.spring(response: 0.18, dampingFraction: 0.76)) { extrasFor = s.id }
                             }
                             if extrasFor != nil { extraHot = extraFrames.first { $0.value.insetBy(dx: -6, dy: -6).contains(v.location) }?.key }
                         }
                         .onEnded { v in
                             holdTask?.cancel(); holdTask = nil
+                            let quick = holdStart.map { Date().timeIntervalSince($0) < 0.45 } ?? true
+                            holdStart = nil
+                            let still = abs(v.translation.width) < 12 && abs(v.translation.height) < 12
                             if extrasFor != nil {
                                 if let p = extraHot { Haptic.hit(.medium); page = p; withAnimation(spring) { active = s.id } }
-                                withAnimation(.snappy) { extrasFor = nil }
+                                withAnimation(.snappy(duration: 0.18)) { extrasFor = nil }
+                                // a plain quick tap: the circle does what it always did
+                                if extraHot == nil && quick && still { tap(s) }
                                 extraHot = nil
                             } else if abs(v.translation.width) < 12 && abs(v.translation.height) < 12 {
                                 tap(s)

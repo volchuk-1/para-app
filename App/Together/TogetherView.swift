@@ -219,12 +219,26 @@ struct WatchSearchView: View {
     @State private var results: [Candidate] = []
     @State private var busy = false
     @State private var searched = false
+    @State private var added: Set<String> = []
+    @State private var lastAdded: String?
 
     var body: some View {
         NavigationStack {
             List {
+                if let lastAdded {
+                    Label("Додано: \(lastAdded) — шукай наступний", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.olive)
+                }
                 ForEach(results) { c in
-                    Button { Task { await add(c) } } label: { CandidateRow(c: c) }
+                    let on = added.contains(c.id) || store.watch.contains { $0.tmdbId == c.tmdbId && $0.mediaType == c.mediaType }
+                    Button { Task { await add(c) } } label: {
+                        HStack {
+                            CandidateRow(c: c)
+                            if on { Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.olive) }
+                        }
+                    }
+                    .disabled(on)
+                    .opacity(on ? 0.6 : 1)
                 }
                 if results.isEmpty && searched && !busy {
                     Text("Нічого не знайшлося. Спробуй назву англійською.").foregroundStyle(Theme.muted)
@@ -234,6 +248,14 @@ struct WatchSearchView: View {
             .listStyle(.plain)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Назва фільму чи серіалу")
             .onSubmit(of: .search) { Task { await search() } }
+            // suggestions while typing: a short pause after the last letter; a newer letter cancels the older search
+            .task(id: query) {
+                let q = query.trimmingCharacters(in: .whitespaces)
+                guard q.count >= 2 else { if q.isEmpty { results = [] }; return }
+                try? await Task.sleep(for: .milliseconds(230))
+                if Task.isCancelled { return }
+                await search()
+            }
             .navigationTitle("Знайти")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрити") { dismiss() } } }
@@ -242,12 +264,23 @@ struct WatchSearchView: View {
     }
 
     private func search() async {
-        busy = true; defer { busy = false }
-        await store.run { results = try await API.current().search(query) }
+        let q = query
+        busy = results.isEmpty
+        defer { busy = false }
+        guard let r = try? await API.current().search(q), q == query else { return }
+        results = r
         searched = true
     }
 
     private func add(_ c: Candidate) async {
-        if await store.run({ store.upsert(try await API.current().addWatch(c, sourceUrl: sourceUrl)) }) { dismiss() }
+        added.insert(c.id)
+        Haptic.hit(.medium)
+        let ok = await store.run { store.upsert(try await API.current().addWatch(c, sourceUrl: sourceUrl)) }
+        if !ok { added.remove(c.id); return }
+        // from a shared link there is one film to add; from search the next one can follow at once
+        if sourceUrl != nil { dismiss(); return }
+        lastAdded = c.title
+        query = ""
+        results = []
     }
 }

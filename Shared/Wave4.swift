@@ -90,9 +90,9 @@ struct GenresResult: Decodable { let genres: [Genre] }
 
 struct HistoryItem: Codable, Identifiable, Hashable {
     let kind: String   // memory | date | film
-    let at: String
+    var at: String
     let id: String
-    let title: String
+    var title: String
     var note: String? = nil
     var photoUrl: String? = nil
     var place: String? = nil
@@ -107,6 +107,9 @@ struct HistoryItem: Codable, Identifiable, Hashable {
     var temp: Int? = nil
     var count: Int? = nil
     var photos: [String]? = nil
+    /// An album: every photo with its own date, place and note; every place once.
+    var shots: [AlbumPhoto]? = nil
+    var places: [AlbumPlace]? = nil
 }
 struct ReviewLine: Codable, Hashable { let memberId: String; let text: String }
 struct HistoryResult: Decodable { let items: [HistoryItem] }

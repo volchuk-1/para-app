@@ -41,8 +41,13 @@ struct SpotSent: Codable, Hashable { let title: String; let artist: String?; let
 struct SpotSide: Codable, Hashable { var name: String? = nil; let linked: Bool; let track: SpotTrack?; var sent: SpotSent? = nil }
 struct SpotNow: Codable { let ready: Bool; let me: SpotSide; let partner: SpotSide? }
 struct SpotConnect: Codable { let ready: Bool; var url: String? = nil }
-struct AlbumPhoto: Codable, Hashable, Identifiable { let id: String; let url: String?; let takenAt: Date?; let lat: Double?; let lon: Double?; let place: String?; let temp: Int? }
-struct Album: Codable, Hashable, Identifiable { let id: String; let title: String; let count: Int; let coverUrl: String?; let place: String?; let photos: [AlbumPhoto] }
+struct AlbumPhoto: Codable, Hashable, Identifiable { let id: String; let url: String?; let takenAt: Date?; let lat: Double?; let lon: Double?; let place: String?; let temp: Int?; var note: String? = nil }
+struct AlbumPlace: Codable, Hashable, Identifiable {
+    let place: String?; let lat: Double?; let lon: Double?; let count: Int
+    var label: String { place ?? String(format: "%.3f, %.3f", lat ?? 0, lon ?? 0) }
+    var id: String { label }
+}
+struct Album: Codable, Hashable, Identifiable { let id: String; let title: String; let count: Int; let coverUrl: String?; let place: String?; let photos: [AlbumPhoto]; var places: [AlbumPlace]? = nil; var note: String? = nil }
 struct AlbumResult: Decodable { let album: Album }
 struct Trailer: Codable, Hashable { let key: String; let lang: String }
 struct PlayResult: Decodable { let play: PlayState; let status: WatchStatus }

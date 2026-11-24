@@ -174,7 +174,7 @@ struct GalleryPage: View {
     // MARK: detail: grows from the blob to the whole screen; the text types itself
 
     private func detail(_ x: HistoryItem) -> some View {
-        MemoryDetail(item: x, ns: ns, close: { withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) { open = nil } },
+        MemoryDetail(item: x, ns: ns, close: { withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) { open = nil }; Task { await load() } },
                      addPhoto: { open = nil; add = AddPreset(title: x.title, date: String(x.at.prefix(10)), eventId: x.id) },
                      deleted: { open = nil; Task { await load() } })
     }
@@ -219,7 +219,7 @@ struct DialWheel: View {
 }
 
 struct MemoryDetail: View {
-    let item: HistoryItem
+    @State var item: HistoryItem
     let ns: Namespace.ID
     var close: () -> Void
     var addPhoto: () -> Void
@@ -227,6 +227,8 @@ struct MemoryDetail: View {
     @Environment(\.openURL) private var openURL
     @State private var typed = ""
     @State private var confirm = false
+    @State private var shot: Int?
+    @State private var editing = false
 
     private var lines: String {
         let d = API.decoderDate(item.at) ?? Evening.date(String(item.at.prefix(10))) ?? Date()
@@ -250,7 +252,9 @@ struct MemoryDetail: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(typed).font(.system(size: 14, design: .monospaced)).lineSpacing(4).frame(minHeight: 90, alignment: .topLeading)
                     Text(item.title).font(.system(size: 42, weight: .light)).tracking(-0.8)
-                    if let lat = item.lat, let lon = item.lon {
+                    if item.kind == "album", let pl = item.places, !pl.isEmpty {
+                        PlaceChips(places: pl)
+                    } else if let lat = item.lat, let lon = item.lon {
                         Button { if let u = URL(string: "https://www.google.com/maps/search/?api=1&query=\(lat),\(lon)") { openURL(u) } } label: {
                             Label(String(format: "%.4f, %.4f · Google Maps", lat, lon), systemImage: "mappin.circle.fill").font(.system(size: 13, weight: .semibold))
                                 .padding(.horizontal, 14).frame(height: 36).background(.ultraThinMaterial, in: Capsule())
@@ -258,7 +262,24 @@ struct MemoryDetail: View {
                     }
                     if let n = item.note, !n.isEmpty { Text(n).font(.system(size: 15)) }
                     if item.kind == "film", let a = item.avg { Text("разом \(String(format: "%.1f", a))").font(.system(size: 15)) }
-                    if item.kind == "album", let ph = item.photos {
+                    if item.kind == "album", let ph = item.shots {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
+                            ForEach(Array(ph.enumerated()), id: \.element.id) { i, p in
+                                Button { Haptic.hit(.light); shot = i } label: {
+                                    Color.gray.aspectRatio(1, contentMode: .fit)
+                                        .overlay { AuthImage(url: p.url) }
+                                        .overlay(alignment: .bottomLeading) {
+                                            if let pl = p.place {
+                                                Text(pl).font(.system(size: 9.5, weight: .bold)).lineLimit(1).shadow(color: .black.opacity(0.8), radius: 3).padding(5)
+                                            }
+                                        }
+                                        .clipped()
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 18)).padding(.top, 160)
+                    } else if item.kind == "album", let ph = item.photos {
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
                             ForEach(ph, id: \.self) { u in Color.gray.aspectRatio(1, contentMode: .fit).overlay { AuthImage(url: u) }.clipped() }
                         }
@@ -269,10 +290,18 @@ struct MemoryDetail: View {
                             .font(.system(size: 15, weight: .semibold)).background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream).padding(.top, 200)
                     }
                     if item.kind == "memory" || item.kind == "album" {
+                        HStack(spacing: 8) {
+                            Button { editing = true } label: {
+                                Label("Змінити", systemImage: "pencil").font(.system(size: 14, weight: .bold))
+                                    .padding(.horizontal, 16).frame(height: 38).background(Color.white.opacity(0.18), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
                         Button("Видалити") { confirm = true }
                             .font(.system(size: 14, weight: .bold)).foregroundStyle(Color(hex: 0xFF6B5E))
                             .padding(.horizontal, 18).frame(height: 38)
-                            .background(Color(hex: 0xFF4637).opacity(0.2), in: Capsule()).padding(.top, 20)
+                            .background(Color(hex: 0xFF4637).opacity(0.2), in: Capsule())
+                        }
+                        .padding(.top, 20)
                     }
                 }
                 .padding(.horizontal, 22).padding(.top, 76).padding(.bottom, 120)
@@ -286,6 +315,14 @@ struct MemoryDetail: View {
         .task {
             typed = ""
             for ch in lines { typed.append(ch); try? await Task.sleep(for: .milliseconds(22)) }
+        }
+        .fullScreenCover(item: Binding(get: { shot.map { ShotIndex(id: $0) } }, set: { shot = $0?.id })) { s in
+            ShotDetail(albumId: item.id, shots: item.shots ?? [], index: s.id) { a in
+                item.shots = a.photos; item.places = a.places
+            }
+        }
+        .sheet(isPresented: $editing) {
+            MemoryEditSheet(item: item) { x in item = x; typed = lines }
         }
         .confirmationDialog("Видалити?", isPresented: $confirm, titleVisibility: .visible) {
             Button("Видалити", role: .destructive) {
@@ -414,3 +451,5 @@ struct PhotoMeta {
         return [p.locality ?? p.subAdministrativeArea, p.administrativeArea].compactMap { $0 }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.joined(separator: ", ")
     }
 }
+
+struct ShotIndex: Identifiable { let id: Int }
