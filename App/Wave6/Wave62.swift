@@ -118,10 +118,3 @@ struct CardSheet: View {
         .presentationDetents([.medium, .large])
     }
 }
-
-/// Pictures already seen stay in memory: coming back to a screen shows them at once instead of blinking.
-enum ImageMemo {
-    private static let cache: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 160; return c }()
-    static func get(_ url: String?) -> UIImage? { url.flatMap { cache.object(forKey: $0 as NSString) } }
-    static func put(_ url: String, _ img: UIImage) { cache.setObject(img, forKey: url as NSString) }
-}
