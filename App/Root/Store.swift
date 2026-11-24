@@ -11,6 +11,9 @@ final class Store: ObservableObject {
     @Published var unread = 0
     @Published var error: String?
     @Published var offline = false
+    /// The dashboard as it was last time — shown at once when Головна opens again.
+    @Published var dash: Dashboard?
+    @Published var spot: SpotNow?
 
     private var api: API { API.current() }
 
@@ -19,6 +22,7 @@ final class Store: ObservableObject {
         watch = Cache.load([WatchItem].self, "watch") ?? []
         wishes = Cache.load([Wish].self, "wishes") ?? []
         home = HomeCache.load()
+        dash = Cache.load(Dashboard.self, "dash")
     }
 
     func refreshAll() async {

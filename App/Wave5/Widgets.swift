@@ -21,6 +21,7 @@ extension Color {
 enum WidgetKind {
     /// kind, name, SF symbol — in the order of the settings list
     static let all: [(String, String, String)] = [
+        ("card", "Натхнення", "sparkles"),
         ("event", "Подія", "calendar"), ("evening", "Вечір", "moon.stars"), ("film", "Фільм", "film"),
         ("turn", "Чия черга обирати фільм", "arrow.left.arrow.right"), ("pomodoro", "Помодоро", "timer"),
         ("note", "Записка", "note.text"), ("coin", "Монетка", "circle.circle"),
@@ -40,6 +41,7 @@ enum WidgetKind {
         case "coin": return (Color(hex: 0xC9A27E), Theme.ink)
         case "touch": return (Theme.paper, Theme.ink)
         case "spotify": return (Color(hex: 0x1F1F1F), .white)
+        case "card": return (Color(hex: 0x2F3A24), Theme.cream)
         default: return (Color(hex: 0x555555), .white)
         }
     }
@@ -282,6 +284,9 @@ struct WidgetCube: View {
         if f == "memory", let u = d.photo?.url {
             Color.clear.overlay(AuthImage(url: u)).clipped()
             LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
+        } else if f == "card", let u = d.card?.image {
+            Color.clear.overlay(RemoteImage(url: u).opacity(0.45)).clipped()
+            LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
         } else if f == "film", w.colors?.bg == nil, let u = d.film?.backdropUrl {
             Color.clear.overlay(RemoteImage(url: u).opacity(0.55)).clipped()
         }
@@ -298,6 +303,7 @@ struct WidgetCube: View {
         case "mood": return "Настрій"
         case "turn": return "Обирає фільм"
         case "coin": return "Монетка"
+        case "card": return (d.card?.tag ?? "Натхнення") + (d.card?.youtube != nil ? " · ▶ відео" : "")
         case "memory": return d.photo?.yearAgo == true ? "Рік тому" : "Спогад"
         default: return f
         }
@@ -324,6 +330,13 @@ struct WidgetCube: View {
             sub(d.turn.memberId == d.me.id ? "твоя черга" : "черга партнера")
         case "coin":
             head(d.coin.map { "\($0.question) — \($0.winnerName)" } ?? "Підкинь монетку", 15, lines: 3)
+        case "card":
+            if let c = d.card {
+                head(c.title, 16)
+                if wide, !c.text.isEmpty { Text(c.text).font(.system(size: fs(12.5))).opacity(0.85).lineLimit(big ? 6 : 2) }
+            } else {
+                head("Скоро тут буде картка", 15)
+            }
         case "memory":
             head(d.photo?.title ?? "Додай перше фото", 16)
         default:

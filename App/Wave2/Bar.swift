@@ -117,13 +117,23 @@ struct WaveBar: View {
                     }
                 }
                 item(s)
+                    .overlay(alignment: .topTrailing) {
+                        if extrasFor == s.id, let ex = extras[s.id] {
+                            extrasPopup(ex)
+                                // its bottom 14 pt above the circle, its right edge 10 pt past the circle's
+                                .alignmentGuide(.top) { $0[.bottom] + 14 }
+                                .alignmentGuide(.trailing) { $0[.trailing] - 10 }
+                                .transition(.modifier(active: PopIn(shown: false), identity: PopIn(shown: true)))
+                        }
+                    }
+                    .zIndex(extrasFor == s.id ? 1 : 0)
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
                         .onChanged { v in
                             // shown the moment the finger lands on the circle
                             if holdStart == nil && extrasFor == nil, extras[s.id] != nil {
                                 holdStart = Date()
                                 Haptic.hit(.heavy)
-                                withAnimation(.spring(response: 0.18, dampingFraction: 0.76)) { extrasFor = s.id }
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.62)) { extrasFor = s.id }
                             }
                             if extrasFor != nil { extraHot = extraFrames.first { $0.value.insetBy(dx: -6, dy: -6).contains(v.location) }?.key }
                         }
@@ -134,7 +144,7 @@ struct WaveBar: View {
                             let still = abs(v.translation.width) < 12 && abs(v.translation.height) < 12
                             if extrasFor != nil {
                                 if let p = extraHot { Haptic.hit(.medium); page = p; withAnimation(spring) { active = s.id } }
-                                withAnimation(.snappy(duration: 0.18)) { extrasFor = nil }
+                                withAnimation(.easeOut(duration: 0.18)) { extrasFor = nil }
                                 // a plain quick tap: the circle does what it always did
                                 if extraHot == nil && quick && still { tap(s) }
                                 extraHot = nil
@@ -147,28 +157,30 @@ struct WaveBar: View {
         .padding(7)
         .background(Theme.paper, in: Capsule())
         .shadow(color: .black.opacity(0.16), radius: 16, y: 10)
-        .overlay(alignment: .topTrailing) {
-            if let k = extrasFor, let ex = extras[k] {
-                HStack(spacing: 8) {
-                    ForEach(ex, id: \.0) { e in
-                        VStack(spacing: 1) {
-                            Group { if e.1 == "piggy" { PiggyIcon().frame(width: 24, height: 20) } else { Image(systemName: e.1).font(.system(size: 20, weight: .semibold)) } }
-                            Text(e.2).font(.system(size: 9, weight: .bold))
-                        }
-                        .frame(width: 60, height: 60)
-                        .background(extraHot == e.0 ? Theme.olive : Theme.tan, in: Circle())
-                        .foregroundStyle(extraHot == e.0 ? Theme.cream : Theme.olive)
-                        .scaleEffect(extraHot == e.0 ? 1.14 : 1)
-                        .background(GeometryReader { g in Color.clear.onAppear { extraFrames[e.0] = g.frame(in: .global) }.onChange(of: g.frame(in: .global)) { _, f in extraFrames[e.0] = f } })
-                    }
+        .sensoryFeedback(.impact(flexibility: .rigid, intensity: 1), trigger: extraHot)
+    }
+
+    /// The same as in the Telegram version: a light pill of round buttons; the one under the finger turns olive and grows.
+    private func extrasPopup(_ ex: [(Page, String, String)]) -> some View {
+        HStack(spacing: 8) {
+            ForEach(ex, id: \.0) { e in
+                let hot = extraHot == e.0
+                VStack(spacing: 1) {
+                    Group { if e.1 == "piggy" { PiggyIcon().frame(width: 24, height: 20) } else { Image(systemName: e.1).font(.system(size: 20, weight: .semibold)) } }
+                    Text(e.2).font(.system(size: 9, weight: .bold)).foregroundStyle(hot ? Theme.cream : Theme.ink).lineLimit(1).minimumScaleFactor(0.8)
                 }
-                .padding(8).background(Theme.paper, in: Capsule()).shadow(color: .black.opacity(0.2), radius: 18, y: 10)
-                .offset(y: -84)
-                .transition(.scale(scale: 0.6, anchor: .bottomTrailing).combined(with: .opacity))
-                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: extraHot)
+                .frame(width: 58, height: 58)
+                .background(hot ? Theme.olive : Theme.tan, in: Circle())
+                .foregroundStyle(hot ? Theme.cream : Theme.olive)
+                .scaleEffect(hot ? 1.14 : 1)
+                .animation(.spring(response: 0.25, dampingFraction: 0.55), value: hot)
+                .background(GeometryReader { g in Color.clear.onAppear { extraFrames[e.0] = g.frame(in: .global) }.onChange(of: g.frame(in: .global)) { _, f in extraFrames[e.0] = f } })
             }
         }
-        .sensoryFeedback(.impact(flexibility: .rigid, intensity: 1), trigger: extraHot)
+        .padding(8)
+        .background(Theme.paper, in: Capsule())
+        .shadow(color: Theme.ink.opacity(0.25), radius: 20, y: 14)
+        .fixedSize()
     }
 
     private func item(_ s: BarSection) -> some View {
@@ -237,6 +249,17 @@ struct WaveBar: View {
         sections.first { $0.start == p || $0.subs.contains { $0.page == p } }?.id
             ?? extras.first { $0.value.contains { $0.0 == p } }?.key
             ?? ([.week, .month].contains(p) ? "calendar" : "me")
+    }
+}
+
+/// The hidden pages pop up from the bottom-right corner, a little springy — as in the Telegram version.
+private struct PopIn: ViewModifier {
+    let shown: Bool
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(shown ? 1 : 0.7, anchor: .bottomTrailing)
+            .offset(y: shown ? 0 : 14)
+            .opacity(shown ? 1 : 0)
     }
 }
 

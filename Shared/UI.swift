@@ -57,24 +57,46 @@ func splitTitle(_ s: String) -> (String, String) {
     return (parts.dropLast().joined(separator: " "), parts.last.map(String.init)! + ".")
 }
 
-/// Public image (posters, shop photos) with a soft placeholder.
+/// Public image (posters, shop photos) with a soft placeholder. Kept in memory once loaded.
 struct RemoteImage: View {
     let url: String?
     var contentMode: ContentMode = .fill
+    @State private var image: UIImage?
+
+    init(url: String?, contentMode: ContentMode = .fill) {
+        self.url = url
+        self.contentMode = contentMode
+        _image = State(initialValue: ImageMemo.get(url))
+    }
+
     var body: some View {
-        AsyncImage(url: url?.asURL) { phase in
-            switch phase {
-            case .success(let img): img.resizable().aspectRatio(contentMode: contentMode)
-            default: ZStack { Theme.sage; Image(systemName: "photo").foregroundStyle(Theme.muted.opacity(0.5)) }
+        ZStack {
+            if let image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
+            } else {
+                Theme.sage
+                Image(systemName: "photo").foregroundStyle(Theme.muted.opacity(0.5))
             }
+        }
+        .task(id: url) {
+            // a new address keeps the old picture on screen until the new one is here
+            if let c = ImageMemo.get(url) { image = c; return }
+            guard let u = url?.asURL, let (data, _) = try? await URLSession.shared.data(from: u), let img = UIImage(data: data) else { return }
+            if let url { ImageMemo.put(url, img) }
+            image = img
         }
     }
 }
 
-/// Protected image (invitation cover): loaded with the device key.
+/// Protected image (invitation cover, our photos): loaded with the device key. Kept in memory once loaded.
 struct AuthImage: View {
     let url: String?
     @State private var image: UIImage?
+
+    init(url: String?) {
+        self.url = url
+        _image = State(initialValue: ImageMemo.get(url))
+    }
 
     var body: some View {
         ZStack {
@@ -86,8 +108,10 @@ struct AuthImage: View {
             }
         }
         .task(id: url) {
-            guard let url, let data = try? await API.current().fileData(url) else { return }
-            image = UIImage(data: data)
+            if let c = ImageMemo.get(url) { image = c; return }
+            guard let url, let data = try? await API.current().fileData(url), let img = UIImage(data: data) else { return }
+            ImageMemo.put(url, img)
+            image = img
         }
     }
 }

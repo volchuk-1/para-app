@@ -5,7 +5,9 @@ import Foundation
 struct DashEvent: Codable, Hashable { let id: String; let title: String; let startsAt: Date; var place: String? = nil; var inMinutes: Int? = nil }
 struct DashMonth: Codable, Hashable { let label: String; let evenings: Int; let films: Int; let books: Int }
 struct DashPhoto: Codable, Hashable { let url: String?; let title: String; let date: String?; let yearAgo: Bool }
-struct DashFilm: Codable, Hashable { let id: String; let title: String; let season: Int?; let episode: Int?; let mediaType: String; let backdropUrl: String? }
+struct DashFilm: Codable, Hashable { let id: String; let title: String; let season: Int?; let episode: Int?; let mediaType: String; let backdropUrl: String?; var posterUrl: String? = nil; var play: PlayState? = nil }
+/// «Натхнення»: the card of the day, it lives in a file on the server.
+struct DashCard: Codable, Hashable, Identifiable { let id: String; let tag: String; let title: String; let text: String; var url: String? = nil; var youtube: String? = nil; var image: String? = nil }
 struct PomoState: Codable, Hashable {
     let activity: String; let startedAt: Date; let endsAt: Date; let total: Int; let left: Int; let paused: Bool; let together: Bool
     var leftNow: Int { paused ? left : max(0, Int(endsAt.timeIntervalSinceNow.rounded())) }
@@ -28,6 +30,8 @@ struct Dashboard: Codable, Hashable {
     let pomo: PomoPair; let mood: MoodPair; let note: NoteItem?; let myNote: NoteItem?
     let turn: TurnInfo; let coin: CoinResult?; let faces: [String]
     var layout: [DashWidget]? = nil
+    var watching: [DashFilm]? = nil
+    var card: DashCard? = nil
 }
 struct WidgetPrefs: Codable { let faces: [String]; var all: [String]? = nil }
 struct StatsMonth: Codable, Hashable { let month: String; let dates: Int; let films: Int; let touches: Int }

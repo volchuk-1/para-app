@@ -55,7 +55,7 @@ struct NotchCard: Shape {
     }
 }
 
-enum DashSheet: String, Identifiable { case mood, note, coin; var id: String { rawValue } }
+enum DashSheet: String, Identifiable { case mood, note, coin, card; var id: String { rawValue } }
 /// «Кіно / Вдома / Гуляти» on the evening face: asked first, sent after a yes.
 struct QuickAsk { let kind: String; let label: String; let time: String }
 
@@ -76,6 +76,8 @@ struct DashboardPage: View {
     @State private var pulse: String?
     @State private var error: String?
     @State private var invite = false
+    @State private var filmOpen: WatchItem?
+    @State private var watchIndex = 0
 
     var body: some View {
         ScrollView {
@@ -101,7 +103,9 @@ struct DashboardPage: View {
         }
         .background(Theme.cream.ignoresSafeArea())
         .foregroundStyle(Theme.ink)
+        .onAppear { if d == nil { d = store.dash; spot = store.spot } }
         .task { await load() }
+        .fullScreenCover(item: $filmOpen) { w in FilmPage(item: w, route: $route) }
         // Spotify stays live: every 12 s while the screen is open, and at once when the app comes back
         .task {
             while !Task.isCancelled {
@@ -123,6 +127,7 @@ struct DashboardPage: View {
             case .mood: MoodSheet()
             case .note: NoteSheet(partnerNote: d?.note, partner: d?.partner?.name ?? "")
             case .coin: CoinSheet(partner: d?.partner?.name ?? "")
+            case .card: if let c = d?.card { CardSheet(card: c) }
             }
         }
         .sheet(item: $editing) { e in
@@ -222,47 +227,69 @@ struct DashboardPage: View {
         .frame(height: 168 + 8 + 206 + 8 + 220)
     }
 
+    /// The big card under the shape: a stack of everything we are watching now. Tap — the film page;
+    /// «На ноутбук» — open it on the laptop. Nothing on — the next date.
     private func bottomCard(_ d: Dashboard) -> some View {
-        var slides: [(String?, String, String, String?)] = []
-        if let f = d.film {
-            var t = f.title
-            if let se = f.season { t += " · S\(se)E\(f.episode ?? 0)" }
-            slides.append((f.backdropUrl, "Дивимось", t, f.mediaType == "tv" ? f.id : nil))
-        }
-        if let n = d.next { slides.append((nil, "Наступне", n.title, nil)) }
-        if let n = d.note, let u = n.photoUrl { slides.append((u, "Записка · \(d.partner?.name ?? "")", n.text, nil)) }
-        return ZStack(alignment: .bottom) {
-            TabView(selection: $slide) {
-                ForEach(Array(slides.enumerated()), id: \.offset) { i, s in
-                    ZStack(alignment: .bottomTrailing) {
-                        LinearGradient(colors: [Theme.olive, Color(hex: 0x2F3A24)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        if let u = s.0 { if u.contains("/files/") { AuthImage(url: u) } else { RemoteImage(url: u) } }
-                        LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(s.1.uppercased()).font(.system(size: 11, weight: .semibold)).tracking(1.4).opacity(0.85)
-                            Text(s.2).font(.system(size: 17, weight: .bold)).multilineTextAlignment(.trailing).lineLimit(2)
-                        }
-                        .foregroundStyle(.white).padding(.trailing, 16).padding(.bottom, 30).frame(maxWidth: 220, alignment: .trailing)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        if let id = s.3 {
-                            Button("+1 серія") { Task { _ = try? await API.current().nextEpisode(id); await load(); await store.refreshAll() } }
-                                .font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 12).frame(height: 30).background(.white.opacity(0.9), in: Capsule()).foregroundStyle(Theme.ink).padding(14)
-                        }
-                    }
-                    .tag(i)
+        let list = (d.watching?.isEmpty == false ? d.watching : d.film.map { [$0] }) ?? []
+        return Group {
+            if list.isEmpty {
+                ZStack(alignment: .bottomTrailing) {
+                    LinearGradient(colors: [Theme.olive, Color(hex: 0x2F3A24)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    caption(d.next == nil ? "" : "Наступне", d.next?.title ?? "Тут буде те, що ви зараз дивитесь")
                 }
-                if slides.isEmpty {
-                    Text("Тут будуть фільм, наступне побачення й записки").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(hex: 0x6F7266))
-                }
+            } else {
+                StackPager(count: list.count, index: $watchIndex, onTap: { i in openFilm(list[i].id) }) { i in watchPage(list[i]) }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            if slides.count > 1 {
-                HStack(spacing: 8) {
-                    ForEach(0..<slides.count, id: \.self) { i in Circle().strokeBorder(.white, lineWidth: 1.5).background(Circle().fill(i == slide ? .white : .clear)).frame(width: 7, height: 7) }
+        }
+    }
+
+    private func watchPage(_ f: DashFilm) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            LinearGradient(colors: [Theme.olive, Color(hex: 0x2F3A24)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            Color.clear.overlay { if let u = f.backdropUrl ?? f.posterUrl { RemoteImage(url: u) } }.clipped()
+            LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
+            VStack(alignment: .trailing, spacing: 10) {
+                caption(f.play?.since != nil ? "Дивимось зараз" : "Дивимось", f.title + (f.season.map { " · S\($0)E\(f.episode ?? 0)" } ?? ""))
+                HStack(spacing: 6) {
+                    if f.mediaType == "tv" {
+                        Button("+1 серія") { Task { _ = try? await API.current().nextEpisode(f.id); await load(); await store.refreshAll() } }
+                            .font(.system(size: 12.5, weight: .bold)).padding(.horizontal, 12).frame(height: 32)
+                            .background(.white.opacity(0.92), in: Capsule()).foregroundStyle(Theme.ink)
+                    }
+                    Button { laptop(f) } label: {
+                        Label("На ноутбук", systemImage: "laptopcomputer").font(.system(size: 12.5, weight: .bold))
+                            .padding(.horizontal, 12).frame(height: 32).background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream)
+                    }
                 }
-                .padding(.bottom, 10)
+                .buttonStyle(.plain)
+            }
+            .padding(14)
+        }
+    }
+
+    private func caption(_ small: String, _ title: String) -> some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            if !small.isEmpty { Text(small.uppercased()).font(.system(size: 11, weight: .semibold)).tracking(1.4).opacity(0.85) }
+            Text(title).font(.system(size: 17, weight: .bold)).multilineTextAlignment(.trailing).lineLimit(2)
+        }
+        .foregroundStyle(.white).frame(maxWidth: 220, alignment: .trailing)
+        .padding(.trailing, 2)
+    }
+
+    private func openFilm(_ id: String) {
+        Haptic.hit(.medium)
+        if let w = store.watch.first(where: { $0.id == id }) { filmOpen = w } else { page = .watch }
+    }
+
+    private func laptop(_ f: DashFilm) {
+        Task {
+            do {
+                let r = try await API.current().remoteOpen(f.id)
+                Haptic.ok()
+                state.banner = r.online ? "Відкриваю на ноутбуці" : "Надіслано — запусти програму на ноутбуці"
+                await load()
+            } catch {
+                state.banner = "Спершу підключи ноутбук: Налаштування → Системні"
             }
         }
     }
@@ -386,6 +413,7 @@ struct DashboardPage: View {
         case "coin": sheet = .coin
         case "turn", "film": page = .watch
         case "memory": page = .archive
+        case "card": sheet = .card
         case "jar": page = .finance
         default: break
         }
@@ -398,6 +426,9 @@ struct DashboardPage: View {
             d = try await a
             spot = try? await b
             spotAt = Date()
+            store.dash = d
+            store.spot = spot
+            if let d { Cache.save(d, "dash") }
             error = nil
         } catch { self.error = error.localizedDescription }
     }
