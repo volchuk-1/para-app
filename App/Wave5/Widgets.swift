@@ -580,6 +580,7 @@ struct WidgetEdit: Identifiable {
 struct WidgetEditSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State var w: DashWidget
+    @State private var mix = false
     let isNew: Bool
     let track: SpotTrack?
     let partner: String
@@ -589,6 +590,9 @@ struct WidgetEditSheet: View {
     var body: some View {
         NavigationStack {
             SoftForm {
+                if w.faces.contains("spotify") {
+                    Section { Button { mix = true } label: { Label("Наш мікс у Spotify", systemImage: "opticaldisc.fill") } }
+                }
                 if let track, w.faces.contains("spotify") {
                     Section {
                         Button {
@@ -622,6 +626,7 @@ struct WidgetEditSheet: View {
                 }
             }
             .navigationTitle(isNew ? "Новий віджет" : "Віджет").navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $mix) { MixSheet() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Закрити") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Зберегти") { onSave(w); dismiss() } }

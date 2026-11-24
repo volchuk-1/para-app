@@ -43,6 +43,7 @@ struct WaveBar: View {
     @State private var extraFrames: [Page: CGRect] = [:]
     @State private var holdTask: Task<Void, Never>?
     @State private var holdStart: Date?
+    @State private var itemFrames: [String: CGRect] = [:]
     private let spring = Animation.spring(response: 0.48, dampingFraction: 0.72)
     /// Pages that do not fit the row: a long press on the circle shows them above it.
     private let extras: [String: [(Page, String, String)]] = [
@@ -68,6 +69,20 @@ struct WaveBar: View {
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 6)
+        // the hidden pages: placed by the pressed circle's position on the screen — the pill's bottom 14 pt above
+        // the circle, its right edge 10 pt past the circle's (exactly as the Telegram version does it)
+        .overlay {
+            GeometryReader { g in
+                if let k = extrasFor, let ex = extras[k], let cf = itemFrames[k] {
+                    let o = g.frame(in: .global).origin
+                    let w = CGFloat(ex.count) * 58 + CGFloat(ex.count - 1) * 8 + 16, h: CGFloat = 74
+                    extrasPopup(ex)
+                        .position(x: min(cf.maxX + 10, UIScreen.main.bounds.width - 8) - w / 2 - o.x, y: cf.minY - 14 - h / 2 - o.y)
+                        .transition(.modifier(active: PopIn(shown: false), identity: PopIn(shown: true)))
+                }
+            }
+            .allowsHitTesting(false)
+        }
         .animation(spring, value: open)
         .animation(spring, value: active)
         .onAppear { active = section(of: page) }
@@ -117,16 +132,11 @@ struct WaveBar: View {
                     }
                 }
                 item(s)
-                    .overlay(alignment: .topTrailing) {
-                        if extrasFor == s.id, let ex = extras[s.id] {
-                            extrasPopup(ex)
-                                // its bottom 14 pt above the circle, its right edge 10 pt past the circle's
-                                .alignmentGuide(.top) { $0[.bottom] + 14 }
-                                .alignmentGuide(.trailing) { $0[.trailing] - 10 }
-                                .transition(.modifier(active: PopIn(shown: false), identity: PopIn(shown: true)))
-                        }
-                    }
-                    .zIndex(extrasFor == s.id ? 1 : 0)
+                    .background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { itemFrames[s.id] = g.frame(in: .global) }
+                            .onChange(of: g.frame(in: .global)) { _, f in itemFrames[s.id] = f }
+                    })
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
                         .onChanged { v in
                             // shown the moment the finger lands on the circle

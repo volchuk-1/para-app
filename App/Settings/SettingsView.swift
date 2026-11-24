@@ -17,6 +17,8 @@ struct SettingsView: View {
     @State private var remote: RemoteInfo?
     @State private var laptopKey: String?
     @State private var template = "where"
+    @State private var mix = false
+    @State private var confirmSpotOff = false
 
     var body: some View {
         NavigationStack {
@@ -42,6 +44,10 @@ struct SettingsView: View {
                 template = remote?.template ?? "where"
             }
             .sheet(isPresented: $people) { PeopleSheet() }
+            .sheet(isPresented: $mix) { MixSheet() }
+            .confirmationDialog("Відключити Spotify? Віджет перестане показувати твою музику.", isPresented: $confirmSpotOff, titleVisibility: .visible) {
+                Button("Відключити", role: .destructive) { Task { try? await API.current().spotifyOff(); spot = try? await API.current().spotifyConnect() } }
+            }
             .confirmationDialog("Вийти? Повернутись можна лише з новим кодом від партнера.", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Вийти", role: .destructive) { state.signOut(); dismiss() }
             }
@@ -54,22 +60,31 @@ struct SettingsView: View {
     @ViewBuilder private var usual: some View {
         Section {
             TextField("Ім'я", text: $name)
-            Button("Зберегти ім'я") { Task { await rename() } }
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || name == state.me?.name)
+            // only when the name was changed
+            if !name.trimmingCharacters(in: .whitespaces).isEmpty && name != state.me?.name {
+                Button("Зберегти ім'я") { Task { await rename() } }
+            }
         } header: { Text("Твоє ім'я") } footer: {
-            Text("Так тебе бачить \(state.partner?.name ?? "партнер") у застосунку, і так тебе називають сповіщення. Зміниш — зміниться всюди, в обох.")
+            Text("Так тебе бачить \(state.partner?.name ?? "партнер") і так тебе називають сповіщення.")
         }
         Section {
-            Text("Затисни віджет на головній — розмір, стос (кілька граней, як куб) і кольори. «Додати віджет» — під віджетами.")
-                .font(.system(size: 13)).foregroundStyle(Theme.muted)
-        } header: { Text("Віджети") }
-        Section {
-            if spot?.ready == true, let u = spot?.url?.asURL {
+            if spot?.ready != true {
+                Text("Spotify ще не налаштовано на сервері.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+            } else if spot?.linked != true, let u = spot?.url?.asURL {
                 Button { openURL(u) } label: { Label("Підключити мій Spotify", systemImage: "music.note") }
             } else {
-                Text("Spotify ще не налаштовано на сервері.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                HStack {
+                    Label("Підключено", systemImage: "checkmark.circle.fill").foregroundStyle(Color(hex: 0x1DB954))
+                    Spacer()
+                    Button("Відключити", role: .destructive) { confirmSpotOff = true }.font(.system(size: 14))
+                }
+                if spot?.mix == true {
+                    Button { mix = true } label: { Label("Наш мікс у Spotify", systemImage: "opticaldisc.fill") }
+                } else if let u = spot?.url?.asURL {
+                    Button { openURL(u) } label: { Label("Оновити доступ (для міксу)", systemImage: "arrow.clockwise") }
+                }
             }
-        } header: { Text("Spotify") } footer: { Text("Віджет Spotify показує, що грає в тебе; подвійний тап перевертає його на партнера.") }
+        } header: { Text("Spotify") }
         Section {
             Button("Близькі й дні народження") { people = true }
         } footer: { Text("Дні народження — у календарі обох, нагадування за 3 тижні, щоб відкрити збір.") }

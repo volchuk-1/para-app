@@ -44,7 +44,11 @@ struct SpotTrack: Codable, Hashable { let playing: Bool; let title: String; let 
 struct SpotSent: Codable, Hashable { let title: String; let artist: String?; let cover: String?; let url: String?; let at: Date }
 struct SpotSide: Codable, Hashable { var name: String? = nil; let linked: Bool; let track: SpotTrack?; var sent: SpotSent? = nil }
 struct SpotNow: Codable { let ready: Bool; let me: SpotSide; let partner: SpotSide? }
-struct SpotConnect: Codable { let ready: Bool; var url: String? = nil }
+struct SpotConnect: Codable { let ready: Bool; var url: String? = nil; var linked: Bool? = nil; var mix: Bool? = nil }
+struct MixState: Codable { let url: String?; let count: Int; let updatedAt: Date }
+struct MixSide: Codable { var name: String? = nil; let linked: Bool; let mix: Bool }
+struct MixInfo: Codable { let ready: Bool; let mix: MixState?; let me: MixSide; let partner: MixSide? }
+struct MixResult: Codable { let mix: MixState?; let both: Bool }
 struct AlbumPhoto: Codable, Hashable, Identifiable { let id: String; let url: String?; let takenAt: Date?; let lat: Double?; let lon: Double?; let place: String?; let temp: Int?; var note: String? = nil }
 struct AlbumPlace: Codable, Hashable, Identifiable {
     let place: String?; let lat: Double?; let lon: Double?; let count: Int
@@ -100,6 +104,9 @@ extension API {
     func trailer(tmdbId: Int, mediaType: String) async throws -> Trailer? { (try await get("/trailer?tmdbId=\(tmdbId)&mediaType=\(mediaType)") as TrailerResult).trailer }
     func spotifyNow() async throws -> SpotNow { try await get("/spotify/now") }
     func spotifyConnect() async throws -> SpotConnect { try await get("/spotify/connect") }
+    func spotifyMix() async throws -> MixInfo { try await get("/spotify/mix") }
+    func buildMix() async throws -> MixResult { try await send("POST", "/spotify/mix", Empty()) }
+    func spotifyOff() async throws { try await delete("/spotify") }
     func spotifySend(_ t: SpotTrack) async throws { let _: OkResult = try await send("POST", "/spotify/send", SongBody(title: t.title, artist: t.artist, cover: t.cover, url: t.url)) }
     func newAlbum(_ title: String) async throws -> Album { (try await send("POST", "/albums", AlbumBody(title: title)) as AlbumResult).album }
     func addAlbumPhoto(_ id: String, jpeg: Data, lat: Double?, lon: Double?, place: String?, takenAt: Date?) async throws {
