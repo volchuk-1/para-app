@@ -48,7 +48,9 @@ enum LiveDates {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let now = Date()
         let running = Set(Activity<DateAttributes>.activities.map(\.attributes.eventId))
-        for e in events where e.invitation?.status == .accepted && Countdown.shouldStartLiveActivity(startsAt: e.startsAt, now: now) {
+        // as on Головна: an accepted invitation, one still waiting for an answer, or an «ours» event
+        let live: (Event) -> Bool = { e in e.isOurs && (e.invitation == nil || e.invitation?.status == .accepted || e.invitation?.status == .pending) }
+        for e in events where live(e) && Countdown.shouldStartLiveActivity(startsAt: e.startsAt, now: now) {
             if running.contains(e.id) { continue }
             let attrs = DateAttributes(eventId: e.id, title: e.title, place: e.place ?? "")
             let state = DateAttributes.ContentState(startsAt: e.startsAt)
@@ -61,7 +63,7 @@ enum LiveDates {
         // End countdowns of cancelled / past events.
         for a in Activity<DateAttributes>.activities {
             let e = events.first { $0.id == a.attributes.eventId }
-            if e == nil || e?.invitation?.status != .accepted || (e!.startsAt < now.addingTimeInterval(-3600)) {
+            if e == nil || !live(e!) || (e!.startsAt < now.addingTimeInterval(-3600)) {
                 Task { await a.end(nil, dismissalPolicy: .immediate) }
             }
         }

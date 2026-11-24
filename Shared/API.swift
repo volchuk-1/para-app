@@ -23,6 +23,7 @@ enum APIError: Error, Equatable, LocalizedError {
             case "FORBIDDEN": return "Це може змінити лише власник."
             case "CANCELLED": return "Запрошення скасоване."
             case "NOT_JPEG": return "Потрібне фото у форматі JPEG."
+            case "PAST": return "Цей час уже минув — обери пізніший."
             default: return "Помилка: \(code)."
             }
         }

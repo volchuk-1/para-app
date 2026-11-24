@@ -244,13 +244,22 @@ struct InviteBooking: View {
         .foregroundStyle(Theme.ink)
     }
 
+    /// Today the time starts from «now + 15 min» on a 15-minute step: nothing can be planned in the past.
+    private var lowest: Int {
+        guard day == Evening.iso(Date()) else { return 6 * 60 }
+        let n = cal.component(.hour, from: Date()) * 60 + cal.component(.minute, from: Date())
+        return Int((Double(n + 15) / 15).rounded(.up)) * 15
+    }
+
     private var stepper: some View {
         HStack(spacing: 10) {
-            Button { arrival = max(6 * 60, arrival - 15) } label: { Image(systemName: "minus").frame(width: 46, height: 44).background(Theme.tan.opacity(0.5), in: RoundedRectangle(cornerRadius: 15)) }
+            Button { arrival = max(lowest, arrival - 15) } label: { Image(systemName: "minus").frame(width: 46, height: 44).background(Theme.tan.opacity(0.5), in: RoundedRectangle(cornerRadius: 15)) }
             Text(String(format: "%02d:%02d", arrival / 60, arrival % 60)).font(.system(size: 30, weight: .medium)).monospacedDigit().frame(minWidth: 100)
             Button { arrival = min(23 * 60 + 45, arrival + 15) } label: { Image(systemName: "plus").frame(width: 46, height: 44).background(Theme.tan.opacity(0.5), in: RoundedRectangle(cornerRadius: 15)) }
         }
         .foregroundStyle(Theme.ink)
+        .onAppear { arrival = max(arrival, lowest) }
+        .onChange(of: day) { _, _ in arrival = min(23 * 60 + 45, max(arrival, lowest)) }
     }
 
     private var days: [String] {
@@ -303,6 +312,7 @@ struct InviteBooking: View {
         } else if day.isEmpty {
             day = avail.first { $0.isFree }?.date ?? Evening.iso(Date())
         }
+        if day == Evening.iso(Date()), lowest > 23 * 60 + 45 { day = Evening.iso(cal.date(byAdding: .day, value: 1, to: Date()) ?? Date()) }
     }
 
     private func send() async {
@@ -314,6 +324,7 @@ struct InviteBooking: View {
         let hm = t.split(separator: ":").compactMap { Int($0) }
         guard let base = Evening.date(day), hm.count == 2,
               let startsAt = cal.date(bySettingHour: hm[0], minute: hm[1], second: 0, of: base) else { return }
+        if startsAt < Date() { error = "Цей час уже минув — обери пізніший"; return }
         let title: String = f.map { "Кіно: \($0.title)" } ?? (pick == "own" ? custom.trimmingCharacters(in: .whitespaces) : act.2)
         if title.isEmpty { error = "Напиши, що робимо"; return }
         var d = EventDraft(ownerId: nil, title: title, startsAt: startsAt, endsAt: nil, place: pick == "cinema" ? "Multiplex «Паннонія»" : (place.isEmpty ? nil : place),
