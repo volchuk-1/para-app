@@ -21,7 +21,7 @@ struct GalleryPage: View {
     @State private var kindHot: String?
     @State private var pressTask: Task<Void, Never>?
     private let kinds: [(String, String, String)] = [("all", "Усе", "sparkles"), ("memory", "Спогади", "photo"), ("album", "Альбоми", "photo.stack"),
-                                                     ("date", "Побачення", "heart.fill"), ("film", "Фільми", "film"), ("cancelled", "Скасовані", "xmark.circle")]
+                                                     ("date", "Побачення", "heart.fill"), ("film", "Фільми", "film")]
     private let mon = ["січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"]
 
     private var shown: [HistoryItem] {
@@ -95,7 +95,8 @@ struct GalleryPage: View {
                     .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.muted).opacity(k > 0.6 ? 1 : 0).offset(y: 30)
             }
             .frame(maxWidth: .infinity)
-            .onTapGesture { withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { open = x } }
+            .onTapGesture { Haptic.hit(.medium); withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { open = x } }
+            .onChange(of: k > 0.85) { _, on in if on { Haptic.hit(.rigid, 0.9) } }
         }
         .frame(height: 124)
     }
@@ -119,9 +120,9 @@ struct GalleryPage: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.9)) { spinReset -= 720 }
                 Task { try? await Task.sleep(for: .milliseconds(600)); withAnimation(.snappy) { year = nil; month = nil; kind = "all" } }
-            } label: { OuroborosIcon().frame(width: 22, height: 22).frame(width: 40, height: 40).background(Theme.olive.opacity(0.12), in: Circle()).rotationEffect(.degrees(spinReset)) }
+            } label: { OuroborosShape().fill(Theme.olive).frame(width: 30, height: 30).frame(width: 44, height: 44).background(Theme.olive.opacity(0.12), in: Circle()).rotationEffect(.degrees(spinReset)) }
                 .buttonStyle(.plain)
-                .sensoryFeedback(.impact(weight: .medium), trigger: spinReset)
+                .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: spinReset)
             label("Рік")
             DialWheel(values: [nil] + years.map { Optional($0) }, label: { $0.map(String.init) ?? "Усі" }, selection: $year)
             label("Місяць")
@@ -182,16 +183,6 @@ struct GalleryPage: View {
     private func load() async { if let l = try? await API.current().history() { items = l }; loaded = true }
 }
 
-/// A small ouroboros: the snake bites its tail (olive).
-struct OuroborosIcon: View {
-    var body: some View {
-        ZStack {
-            Circle().trim(from: 0.06, to: 0.92).stroke(Theme.olive, style: StrokeStyle(lineWidth: 2.2, lineCap: .round)).rotationEffect(.degrees(-60))
-            Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundStyle(Theme.olive).rotationEffect(.degrees(150)).offset(x: 6, y: -8)
-        }
-    }
-}
-
 /// A dial: values snap under the band, small notches between them, a ratchet click on each step.
 struct DialWheel: View {
     let values: [Int?]
@@ -220,7 +211,7 @@ struct DialWheel: View {
         .background(Theme.paper, in: RoundedRectangle(cornerRadius: 22))
         .overlay(LinearGradient(stops: [.init(color: Theme.paper, location: 0), .init(color: Theme.paper.opacity(0), location: 0.32), .init(color: Theme.paper.opacity(0), location: 0.68), .init(color: Theme.paper, location: 1)], startPoint: .top, endPoint: .bottom).allowsHitTesting(false))
         .clipShape(RoundedRectangle(cornerRadius: 22))
-        .sensoryFeedback(.selection, trigger: pos)
+        .sensoryFeedback(.impact(flexibility: .rigid, intensity: 1), trigger: pos)
         .onAppear { pos = values.firstIndex(of: selection) ?? 0 }
         .onChange(of: pos) { _, p in if let p, values.indices.contains(p), values[p] != selection { selection = values[p] } }
         .onChange(of: selection) { _, s in let i = values.firstIndex(of: s) ?? 0; if i != pos { withAnimation { pos = i } } }
@@ -281,12 +272,14 @@ struct MemoryDetail: View {
                         Button("Видалити") { confirm = true }.font(.system(size: 13)).opacity(0.6).padding(.top, 20)
                     }
                 }
-                .padding(.horizontal, 22).padding(.top, 70).padding(.bottom, 120)
+                .padding(.horizontal, 22).padding(.top, 76).padding(.bottom, 120)
             }
             .foregroundStyle(.white)
-            Button(action: close) { Image(systemName: "xmark").font(.system(size: 17, weight: .bold)).frame(width: 42, height: 42).background(.ultraThinMaterial, in: Circle()) }
-                .foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 16).padding(.top, 8)
+            // top-left: the bell sits top-right over everything
+            Button { Haptic.hit(.medium); close() } label: { Image(systemName: "chevron.left").font(.system(size: 17, weight: .bold)).frame(width: 46, height: 46).background(.ultraThinMaterial, in: Circle()) }
+                .foregroundStyle(.white).padding(.leading, 16).padding(.top, 6)
         }
+        .gesture(DragGesture(minimumDistance: 30).onEnded { v in if v.translation.height > 90 || v.translation.width > 110 { Haptic.hit(.medium); close() } })
         .task {
             typed = ""
             for ch in lines { typed.append(ch); try? await Task.sleep(for: .milliseconds(22)) }

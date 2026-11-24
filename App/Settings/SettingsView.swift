@@ -62,6 +62,7 @@ struct SettingsView: View {
                         .font(.system(size: 13)).foregroundStyle(Theme.muted)
                     Text("Спільна папка: \(Shared.groupWorks ? "працює" : "недоступна") (\(Shared.group))")
                         .font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.muted)
+                    Text("Іконка уробороса — Lorc, game-icons.net, ліцензія CC BY 3.0.").font(.system(size: 12)).foregroundStyle(Theme.muted)
                 } header: { Text("Про застосунок") }
                 Section {
                     Button("Вийти з цього телефона", role: .destructive) { confirmSignOut = true }

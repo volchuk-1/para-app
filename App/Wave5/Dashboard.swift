@@ -117,17 +117,23 @@ struct DashboardPage: View {
     }
 
     private var header: some View {
-        HStack(alignment: .bottom) {
+        HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Date().formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "uk_UA"))).capitalizedFirst)
                     .font(.system(size: 13)).foregroundStyle(Theme.muted)
-                Text("Привіт, \(state.me?.name ?? "")").font(.serif(28, .bold))
+                Text("Привіт, \(state.me?.name ?? "")").font(.serif(28, .bold)).lineLimit(1).minimumScaleFactor(0.7)
             }
-            Spacer()
-            Button { sheet = .mood } label: {
-                Text(d?.mood.me?.emoji ?? "🙂").font(.system(size: 24)).frame(width: 46, height: 46).background(Theme.paper, in: Circle())
+            Spacer(minLength: 6)
+            // on the bell's level: the partner's mood on the left, mine on the right (tap to change)
+            Button { Haptic.hit(.medium); sheet = .mood } label: {
+                HStack(spacing: 2) {
+                    Text(d?.mood.partner?.emoji ?? "·").font(.system(size: 22)).frame(width: 38, height: 38)
+                    Text(d?.mood.me?.emoji ?? "🙂").font(.system(size: 22)).frame(width: 38, height: 38).background(Theme.tan.opacity(0.7), in: Circle())
+                }
+                .padding(4).background(Theme.paper, in: Capsule())
             }
-            .padding(.trailing, 54)
+            .buttonStyle(.plain)
+            .padding(.trailing, 58).offset(y: -4)
         }
     }
 
@@ -279,11 +285,10 @@ struct DashboardPage: View {
             if let s = spot, !s.ready {
                 Button { sheet = .widgets } label: { spotRow(nil, small: "Spotify", title: "Ще не підключено", sub: "Налаштування → Віджети", dark: false) }.buttonStyle(.plain)
             } else {
-                spotRow(t?.cover, small: (spotPartner ? (spot?.partner?.name ?? "") : "Ти") + (side?.linked == false ? " · не підключено" : t?.playing == true ? " слухає зараз" : " слухав(ла) останнім"),
-                        title: t?.title ?? "—", sub: t?.artist ?? "", dark: true, playing: t?.playing == true)
+                spotCard(t, small: (spotPartner ? (spot?.partner?.name ?? "") : "Ти") + (side?.linked == false ? " · не підключено" : t?.playing == true ? " · зараз грає" : " · останнє"))
                     .rotation3DEffect(.degrees(spotPartner ? 360 : 0), axis: (x: 1, y: 0, z: 0))
-                    .onTapGesture(count: 2) { withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) { spotPartner.toggle() } }
-                    .onLongPressGesture(minimumDuration: 0.5) { if let t { sendSong = t } }
+                    .onTapGesture(count: 2) { Haptic.hit(.heavy); withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) { spotPartner.toggle() } }
+                    .onLongPressGesture(minimumDuration: 0.45) { Haptic.hit(.heavy); if let t { sendSong = t } }
             }
             if let sent = spot?.me.sent, sent.at.timeIntervalSinceNow > -3 * 86400 {
                 Button { if let u = sent.url?.asURL { openURL(u) } } label: {
@@ -292,6 +297,31 @@ struct DashboardPage: View {
             }
         }
     }
+    /// Like Spotify's own widget: the cover's colours behind, the cover, the logo, the track.
+    private func spotCard(_ t: SpotTrack?, small: String) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            Color(hex: 0x1F1F1F)
+            if let c = t?.cover { RemoteImage(url: c).blur(radius: 44).scaleEffect(1.7).opacity(0.8); Color.black.opacity(0.28) }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .top) {
+                    RemoteImage(url: t?.cover).frame(width: 66, height: 66).clipShape(RoundedRectangle(cornerRadius: 8)).shadow(color: .black.opacity(0.4), radius: 10, y: 4)
+                    Spacer()
+                    if t?.playing == true { Image(systemName: "waveform").symbolEffect(.variableColor.iterative).font(.system(size: 15, weight: .bold)).padding(.top, 4).padding(.trailing, 6) }
+                    SpotifyGlyph().frame(width: 26, height: 26)
+                }
+                Spacer(minLength: 12)
+                Text(small.uppercased()).font(.system(size: 10.5, weight: .bold)).tracking(0.8).opacity(0.8)
+                Text(t?.title ?? "Нічого не грає").font(.system(size: 18, weight: .bold)).lineLimit(1)
+                Text(t?.artist ?? "").font(.system(size: 14)).opacity(0.85).lineLimit(1)
+            }
+            .padding(16)
+        }
+        .frame(height: 164)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .foregroundStyle(.white)
+        .contentShape(Rectangle())
+    }
+
     private func spotRow(_ cover: String?, small: String, title: String, sub: String, dark: Bool, playing: Bool = false) -> some View {
         HStack(spacing: 12) {
             RemoteImage(url: cover).frame(width: 58, height: 58).clipShape(RoundedRectangle(cornerRadius: 14))
@@ -330,6 +360,7 @@ struct DashboardPage: View {
         .buttonStyle(.plain)
     }
     private func touch(_ kind: String) async {
+        Haptic.hit(.heavy)
         withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) { pulse = kind == "miss" ? "Скучаю" : "Думаю про тебе" }
         do { try await API.current().touch(kind); state.banner = kind == "miss" ? "Надіслано: скучаю" : "\(d?.partner?.name ?? "") отримає сердечко" }
         catch { self.error = "Зачекай трохи перед наступним" }
@@ -402,7 +433,7 @@ struct CubeWidget: View {
                 }
             })
             .onTapGesture { if !faces.isEmpty { onTap(faces[idx % faces.count]) } }
-            .sensoryFeedback(.impact(weight: .light), trigger: idx)
+            .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: idx)
         }
         .task {
             if faces.contains("jar") { fin = try? await API.current().finance4() }
@@ -513,10 +544,22 @@ struct CubeWidget: View {
 struct MoodSheet: View {
     @Environment(\.dismiss) private var dismiss
     private let moods = ["😊", "🥰", "😴", "🤒", "😤", "🥲", "🤩", "😌", "🫠", "🔥"]
+    @State private var custom = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Мій настрій").font(.serif(28, .bold))
             Text("Партнер побачить його на дашборді й у кубику.").font(.system(size: 14)).foregroundStyle(Theme.muted)
+            HStack(spacing: 10) {
+                EmojiField(text: $custom).frame(width: 76, height: 64).background(Theme.cream, in: RoundedRectangle(cornerRadius: 18))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Будь-який смайлик").font(.system(size: 14, weight: .semibold))
+                    Text("Тапни ліворуч — відкриється клавіатура емодзі.").font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+                }
+                Spacer()
+                Button("Готово") { Task { try? await API.current().setMood(custom); Haptic.ok(); dismiss() } }
+                    .font(.system(size: 14, weight: .semibold)).padding(.horizontal, 14).frame(height: 40).background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream)
+                    .disabled(custom.isEmpty).opacity(custom.isEmpty ? 0.4 : 1)
+            }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
                 ForEach(moods, id: \.self) { m in
                     Button { Task { try? await API.current().setMood(m); dismiss() } } label: { Text(m).font(.system(size: 32)).frame(maxWidth: .infinity, minHeight: 60).background(Theme.cream, in: RoundedRectangle(cornerRadius: 18)) }
@@ -668,5 +711,56 @@ struct SplashView: View {
             .scaleEffect(on ? 1 : 0.94).opacity(on ? 1 : 0)
         }
         .onAppear { withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) { on = true } }
+    }
+}
+
+
+/// One emoji from the system emoji keyboard.
+struct EmojiField: UIViewRepresentable {
+    @Binding var text: String
+    func makeUIView(context: Context) -> EmojiTextField {
+        let f = EmojiTextField()
+        f.delegate = context.coordinator
+        f.font = .systemFont(ofSize: 38)
+        f.textAlignment = .center
+        f.placeholder = "🙂"
+        f.tintColor = .clear
+        return f
+    }
+    func updateUIView(_ v: EmojiTextField, context: Context) { if v.text != text { v.text = text } }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        let parent: EmojiField
+        init(_ p: EmojiField) { parent = p }
+        func textField(_ tf: UITextField, shouldChangeCharactersIn range: NSRange, replacementString s: String) -> Bool {
+            let v = s.last.map { String($0) } ?? ""
+            tf.text = v
+            parent.text = v
+            return false
+        }
+    }
+}
+
+final class EmojiTextField: UITextField {
+    override var textInputContextIdentifier: String? { "" }
+    override var textInputMode: UITextInputMode? {
+        UITextInputMode.activeInputModes.first { $0.primaryLanguage == "emoji" } ?? super.textInputMode
+    }
+}
+
+/// Spotify's mark: a white disc with three arcs.
+struct SpotifyGlyph: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width
+            ctx.fill(Path(ellipseIn: CGRect(origin: .zero, size: size)), with: .color(.white))
+            for (i, y) in [0.36, 0.52, 0.67].enumerated() {
+                var p = Path()
+                let inset = w * (0.2 + Double(i) * 0.04)
+                p.move(to: CGPoint(x: inset, y: w * y))
+                p.addQuadCurve(to: CGPoint(x: w - inset, y: w * (y + 0.05)), control: CGPoint(x: w / 2, y: w * (y - 0.13 + Double(i) * 0.02)))
+                ctx.stroke(p, with: .color(Color(hex: 0x1F1F1F)), style: StrokeStyle(lineWidth: w * (0.085 - Double(i) * 0.012), lineCap: .round))
+            }
+        }
     }
 }

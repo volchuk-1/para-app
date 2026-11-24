@@ -35,7 +35,8 @@ struct WaveBar: View {
     @State private var active = "home"
     @State private var open = false
     @State private var lastPick: [String: Page] = [:]
-    @State private var width: CGFloat = 360
+    /// Fixed by the screen, never measured from the bar itself (that fed back and blew the row up).
+    private var width: CGFloat { UIScreen.main.bounds.width - 28 }
     @State private var foldTicket = 0
     @State private var extrasFor: String?
     @State private var extraHot: Page?
@@ -44,9 +45,8 @@ struct WaveBar: View {
     private let spring = Animation.spring(response: 0.48, dampingFraction: 0.72)
     /// Pages that do not fit the row: a long press on the circle shows them above it.
     private let extras: [String: [(Page, String, String)]] = [
-        "together": [(.pomo, "timer", "Помодоро"), (.stats, "chart.bar.fill", "Статистика")],
+        "together": [(.wishes, "gift.fill", "Бажання"), (.finance, "piggy", "Банки"), (.archive, "photo.on.rectangle", "Спогади")],
         "me": [(.stats, "chart.bar.fill", "Статистика"), (.pomo, "timer", "Помодоро")],
-        "calendar": [(.pomo, "timer", "Помодоро"), (.stats, "chart.bar.fill", "Статистика")],
     ]
 
     var body: some View {
@@ -65,17 +65,14 @@ struct WaveBar: View {
             Spacer(minLength: 0)
             row
         }
-        .background(GeometryReader { g in
-            Color.clear.onAppear { width = g.size.width }.onChange(of: g.size.width) { _, w in width = w }
-        })
         .padding(.horizontal, 14)
         .padding(.bottom, 6)
         .animation(spring, value: open)
         .animation(spring, value: active)
         .onAppear { active = section(of: page) }
         .onChange(of: page) { _, p in if !open { withAnimation(spring) { active = section(of: p) } } }
-        .sensoryFeedback(.selection, trigger: page)
-        .sensoryFeedback(.impact(weight: .light), trigger: open)
+        .sensoryFeedback(.impact(weight: .medium, intensity: 1), trigger: page)
+        .sensoryFeedback(.impact(weight: .heavy, intensity: 0.9), trigger: open)
     }
 
     private var current: BarSection? { sections.first { $0.id == active } }
@@ -93,11 +90,14 @@ struct WaveBar: View {
     /// Too many subs for their labels (Разом has 7): icons only, the open page keeps its label.
     private var compact: Bool {
         guard let s = current else { return false }
-        return s.subs.map { labelWidth($0.label) }.reduce(0, +) > room * 1.08
+        return s.subs.map { labelWidth($0.label) }.reduce(0, +) > room * 1.25
     }
     private func subWidth(_ x: BarSub) -> CGFloat {
         guard open, let s = current, !s.subs.isEmpty else { return 0 }
-        guard compact else { return labelWidth(x.label).rounded(.down) }
+        guard compact else {
+            let total = s.subs.map { labelWidth($0.label) }.reduce(0, +)
+            return (labelWidth(x.label) * min(1, room / max(1, total))).rounded(.down)
+        }
         let cur = s.subs.first { $0.page != nil && $0.page == page }
         let curW = cur.map { min(labelWidth($0.label), room * 0.3) } ?? 0
         if x.id == cur?.id { return curW.rounded(.down) }
@@ -120,8 +120,8 @@ struct WaveBar: View {
                         .onChanged { v in
                             if holdTask == nil && extrasFor == nil, extras[s.id] != nil {
                                 holdTask = Task { @MainActor in
-                                    try? await Task.sleep(for: .milliseconds(420))
-                                    if !Task.isCancelled { withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) { extrasFor = s.id } }
+                                    try? await Task.sleep(for: .milliseconds(200))
+                                    if !Task.isCancelled { Haptic.hit(.heavy); withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) { extrasFor = s.id } }
                                 }
                             }
                             if extrasFor != nil { extraHot = extraFrames.first { $0.value.insetBy(dx: -6, dy: -6).contains(v.location) }?.key }
@@ -129,7 +129,7 @@ struct WaveBar: View {
                         .onEnded { v in
                             holdTask?.cancel(); holdTask = nil
                             if extrasFor != nil {
-                                if let p = extraHot { page = p }
+                                if let p = extraHot { Haptic.hit(.medium); page = p; withAnimation(spring) { active = s.id } }
                                 withAnimation(.snappy) { extrasFor = nil }
                                 extraHot = nil
                             } else if abs(v.translation.width) < 12 && abs(v.translation.height) < 12 {
@@ -146,7 +146,7 @@ struct WaveBar: View {
                 HStack(spacing: 8) {
                     ForEach(ex, id: \.0) { e in
                         VStack(spacing: 1) {
-                            Image(systemName: e.1).font(.system(size: 20, weight: .semibold))
+                            Group { if e.1 == "piggy" { PiggyIcon().frame(width: 24, height: 20) } else { Image(systemName: e.1).font(.system(size: 20, weight: .semibold)) } }
                             Text(e.2).font(.system(size: 9, weight: .bold))
                         }
                         .frame(width: 60, height: 60)
@@ -162,8 +162,7 @@ struct WaveBar: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: extraHot)
             }
         }
-        .sensoryFeedback(.selection, trigger: extraHot)
-        .sensoryFeedback(.impact(weight: .medium), trigger: extrasFor)
+        .sensoryFeedback(.impact(flexibility: .rigid, intensity: 1), trigger: extraHot)
     }
 
     private func item(_ s: BarSection) -> some View {
@@ -229,7 +228,9 @@ struct WaveBar: View {
     }
 
     private func section(of p: Page) -> String {
-        sections.first { $0.start == p || $0.subs.contains { $0.page == p } }?.id ?? ([.week, .month].contains(p) ? "calendar" : "home")
+        sections.first { $0.start == p || $0.subs.contains { $0.page == p } }?.id
+            ?? extras.first { $0.value.contains { $0.0 == p } }?.key
+            ?? ([.week, .month].contains(p) ? "calendar" : "me")
     }
 }
 
@@ -291,4 +292,14 @@ struct PiggyIcon: View {
             ctx.fill(Path(ellipseIn: CGRect(x: w * 0.66, y: h * 0.38, width: w * 0.06, height: w * 0.06)), with: .color(Theme.paper))
         }
     }
+}
+
+
+/// Strong, immediate taps (the system «selection» tick is too faint for Viktor).
+enum Haptic {
+    static func hit(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium, _ intensity: CGFloat = 1) {
+        let g = UIImpactFeedbackGenerator(style: style)
+        g.impactOccurred(intensity: intensity)
+    }
+    static func ok() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
 }

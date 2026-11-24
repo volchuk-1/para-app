@@ -523,7 +523,7 @@ struct RouletteSheet: View {
         // haptic ticks: fast at first, slower as the strip slows down
         Task { @MainActor in
             var t = 0.0, step = 0.05
-            while t < 4.2 { UISelectionFeedbackGenerator().selectionChanged(); try? await Task.sleep(for: .seconds(step)); t += step; step *= 1.09 }
+            while t < 4.2 { Haptic.hit(.rigid, 0.85); try? await Task.sleep(for: .seconds(step)); t += step; step *= 1.09 }
         }
         try? await Task.sleep(for: .milliseconds(60))
         withAnimation(.timingCurve(0.08, 0.82, 0.17, 1, duration: 4.4)) { offset = target }

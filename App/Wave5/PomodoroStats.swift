@@ -61,8 +61,8 @@ struct PomodoroPage: View {
         .background(bg.ignoresSafeArea())
         .foregroundStyle(Color(hex: 0xF3EEE6))
         .task { pair = try? await API.current().pomo() }
-        .sensoryFeedback(.selection, trigger: hours)
-        .sensoryFeedback(.selection, trigger: minutes)
+        .sensoryFeedback(.impact(flexibility: .rigid, intensity: 1), trigger: hours)
+        .sensoryFeedback(.impact(flexibility: .rigid, intensity: 0.8), trigger: minutes)
     }
 
     private var gauge: some View {

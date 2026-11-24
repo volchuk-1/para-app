@@ -72,11 +72,8 @@ struct MainView: View {
                        subs: [BarSub(id: "cal", icon: "calendar", label: "Календар", page: .cal),
                               BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites)]),
             BarSection(id: "together", icon: "heart.fill", avatar: nil, label: "Разом", note: "", start: .evening,
-                       subs: [BarSub(id: "evening", icon: "moon.stars.fill", label: "Вечір", page: .evening), BarSub(id: "watch", icon: "popcorn.fill", label: "Дивимось", page: .watch),
-                              BarSub(id: "cinema", icon: "film.fill", label: "Кіно", page: .cinema),
-                              BarSub(id: "books", icon: "books.vertical.fill", label: "Книжки", page: .books), BarSub(id: "wishes", icon: "gift.fill", label: "Бажання", page: .wishes),
-                              BarSub(id: "finance", icon: "piggy", label: "Банки", page: .finance),
-                              BarSub(id: "archive", icon: "photo.on.rectangle", label: "Історія", page: .archive)]),
+                       subs: [BarSub(id: "evening", icon: "moon.stars.fill", label: "Вечір", page: .evening), BarSub(id: "cinema", icon: "film.fill", label: "Кіно", page: .cinema),
+                              BarSub(id: "watch", icon: "popcorn.fill", label: "Дивимось", page: .watch), BarSub(id: "books", icon: "books.vertical.fill", label: "Книжки", page: .books)]),
         ]
     }
 
@@ -103,12 +100,13 @@ struct MainView: View {
                 case .games: ScrollView { VStack(alignment: .leading, spacing: 14) { PageTitle(plain: "Ігри", italic: "для двох"); EmptyCard(text: "Картки й інші ігри переїдуть сюди згодом.") }.padding(.horizontal, 18).padding(.top, 8) }.background(Theme.cream.ignoresSafeArea())
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: UIScreen.main.bounds.width).frame(maxHeight: .infinity)
             .transition(.blurReplace)
             .animation(.easeInOut(duration: 0.25), value: page)
 
             WaveBar(page: $page, sections: sections, onAdd: { showAdd = true },
                     onSheet: { id in menu = id == "code" ? .code : .settings })
+                .frame(width: UIScreen.main.bounds.width)
         }
         .overlay(alignment: .topTrailing) {
             BellButton(unread: store.unread) { menu = .notifications }

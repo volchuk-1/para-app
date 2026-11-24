@@ -350,6 +350,7 @@ struct CinemaPage: View {
                 Color.clear.frame(width: 78, height: 112)
                     .overlay { if let p = film.poster { RemoteImage(url: p) } else { card } }
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .contentShape(Rectangle())
                     .onTapGesture { flip = FlipFilm(title: film.title, poster: film.poster, watchId: film.watchId, tmdbId: nil, mediaType: nil, fav: favs[film.title] ?? (film.fav == true)) }
                     .overlay(alignment: .top) {
                         if film.watchId != nil {
@@ -395,6 +396,7 @@ struct CinemaPage: View {
                     Color.clear.frame(height: 190)
                         .overlay { if let p = s.poster { RemoteImage(url: p) } else { card } }
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .contentShape(Rectangle())
                         .onTapGesture { flip = FlipFilm(title: s.title, poster: s.poster, watchId: nil, tmdbId: nil, mediaType: nil, fav: favs[s.title] ?? (s.fav == true)) }
                         .overlay(alignment: .bottomLeading) {
                             if s.onSale { Text("Квитки у продажу").font(.system(size: 10.5, weight: .bold)).padding(.horizontal, 7).padding(.vertical, 3).background(accent, in: RoundedRectangle(cornerRadius: 7)).foregroundStyle(bg).padding(8) }
