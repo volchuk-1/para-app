@@ -257,7 +257,7 @@ struct InvitesPage: View {
         let list = store.events.filter { $0.invitation != nil }.sorted { $0.startsAt > $1.startsAt }
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                PageTitle(plain: "Запро", italic: "шення", sub: "\(list.filter { $0.invitation?.status == .pending }.count) чекають відповіді")
+                PageTitle(plain: "Наші", italic: "запрошення", sub: "\(list.filter { $0.invitation?.status == .pending }.count) чекають відповіді")
                 if list.isEmpty { EmptyCard(text: "Ще не було запрошень. Натисни «+» або «Вільний вечір» у календарі.") }
                 ForEach(list) { e in
                     Button { open = e } label: {
@@ -312,6 +312,16 @@ struct ScheduleSheet: View {
         NavigationStack {
             SoftForm {
                 Section { Text("Звідси календар знає, коли ви обоє вільні. Вечір для побачення — обоє вільні приблизно з 19:30.").font(.system(size: 13)).foregroundStyle(Theme.muted) }
+                if let data, !data.rules.contains(where: { $0.memberId == state.me?.id && $0.kind == "work" }) {
+                    Section {
+                        daysRow
+                        DatePicker("Початок", selection: $start, displayedComponents: .hourAndMinute)
+                        DatePicker("Кінець", selection: $end, displayedComponents: .hourAndMinute)
+                        Button("Зберегти мій графік") { kind = "work"; Task { await addRule() } }.disabled(days.isEmpty)
+                    } header: { Text("Мій графік роботи") } footer: {
+                        Text("Без нього календар не знає, коли ти зайнятий. \(state.partner?.name ?? "Партнер") вносить свій графік зі свого телефону.")
+                    }
+                }
                 Section("Правила") {
                     ForEach(data?.rules ?? []) { r in
                         HStack {
@@ -330,19 +340,11 @@ struct ScheduleSheet: View {
                 }
                 Section {
                     shiftGrid
-                } header: { Text("Мої дні цього місяця") } footer: { Text("Тап: робочий → вихідний → як завжди. Для змінного графіка.") }
+                } header: { Text("Мої змінні дні") } footer: { Text("Лише коли день не такий, як завжди (відгул, зміна у вихідний). Тап: робочий → вихідний → як завжди.") }
                 Section("Нове правило") {
                     Picker("Що", selection: $kind) { Text("Робота").tag("work"); Text("Справа").tag("activity"); Text("Інколи").tag("sometimes") }.pickerStyle(.segmented)
                     if kind != "work" { TextField("Назва (тренування, курси…)", text: $label) }
-                    HStack(spacing: 4) {
-                        ForEach([1, 2, 3, 4, 5, 6, 0], id: \.self) { i in
-                            Button(wd[i]) { if days.contains(i) { days.remove(i) } else { days.insert(i) } }
-                                .font(.system(size: 12.5, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 34)
-                                .background(days.contains(i) ? Theme.olive : Theme.paper, in: RoundedRectangle(cornerRadius: 10))
-                                .foregroundStyle(days.contains(i) ? Theme.cream : Theme.ink)
-                                .buttonStyle(.plain)
-                        }
-                    }
+                    daysRow
                     DatePicker("Початок", selection: $start, displayedComponents: .hourAndMinute)
                     DatePicker("Кінець", selection: $end, displayedComponents: .hourAndMinute)
                     Button("Додати") { Task { await addRule() } }.disabled(days.isEmpty)
@@ -354,6 +356,18 @@ struct ScheduleSheet: View {
             .task { await load() }
         }
         .tint(Theme.olive)
+    }
+
+    private var daysRow: some View {
+        HStack(spacing: 4) {
+            ForEach([1, 2, 3, 4, 5, 6, 0], id: \.self) { i in
+                Button(wd[i]) { if days.contains(i) { days.remove(i) } else { days.insert(i) } }
+                    .font(.system(size: 12.5, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 34)
+                    .background(days.contains(i) ? Theme.olive : Theme.paper, in: RoundedRectangle(cornerRadius: 10))
+                    .foregroundStyle(days.contains(i) ? Theme.cream : Theme.ink)
+                    .buttonStyle(.plain)
+            }
+        }
     }
 
     private var shiftGrid: some View {
