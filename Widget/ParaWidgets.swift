@@ -43,7 +43,7 @@ struct NoteWidgetView: View {
             Text(entry.date, style: .time).font(.caption2).foregroundStyle(.secondary)
         }
         .containerBackground(for: .widget) {
-            Color(red: 0.06, green: 0.08, blue: 0.19)
+            Color(red: 0x4B / 255, green: 0x5E / 255, blue: 0x3A / 255)
         }
     }
 }
@@ -65,7 +65,7 @@ struct PingLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PingAttributes.self) { context in
             HStack {
-                Image(systemName: "heart.fill").foregroundStyle(.pink)
+                Image(systemName: "timer").foregroundStyle(Color(red: 0xF2 / 255, green: 0xEE / 255, blue: 0xE2 / 255))
                 Text(context.state.label).font(.headline)
                 Spacer()
                 Text(timerInterval: Date.countdown(to: context.state.endsAt), countsDown: true).opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час!") } }
@@ -73,7 +73,7 @@ struct PingLiveActivity: Widget {
                     .font(.title3.bold())
             }
             .padding()
-            .activityBackgroundTint(Color(red: 0.06, green: 0.08, blue: 0.19))
+            .activityBackgroundTint(Color(red: 0x4B / 255, green: 0x5E / 255, blue: 0x3A / 255))
             .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
@@ -146,11 +146,64 @@ struct DateLiveActivity: Widget {
     }
 }
 
+// MARK: - Activity timer (calendar): olive, counts down to the start, then to the end
+
+struct TaskLiveActivity: Widget {
+    private let olive = Color(red: 0x4B / 255, green: 0x5E / 255, blue: 0x3A / 255)
+    private let cream = Color(red: 0xF2 / 255, green: 0xEE / 255, blue: 0xE2 / 255)
+
+    @ViewBuilder private func time(_ s: TaskAttributes.ContentState, stale: Bool) -> some View {
+        // staleDate = start: before it — countdown to the start; after it — countdown to the end
+        if stale { Text(timerInterval: Date.countdown(to: s.endsAt), countsDown: true) }
+        else { Text(timerInterval: Date.countdown(to: s.startsAt), countsDown: true) }
+    }
+
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: TaskAttributes.self) { context in
+            HStack(spacing: 12) {
+                Image(systemName: "timer").font(.title2).foregroundStyle(olive)
+                    .frame(width: 44, height: 44).background(cream, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(context.attributes.title).font(.headline).foregroundStyle(cream).lineLimit(1)
+                    Text(context.isStale ? "до \(context.state.endsAt.formatted(date: .omitted, time: .shortened))" : "почнеться о \(context.state.startsAt.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption).foregroundStyle(cream.opacity(0.8))
+                }
+                Spacer()
+                time(context.state, stale: context.isStale).monospacedDigit().font(.title2.bold()).foregroundStyle(cream)
+                    .multilineTextAlignment(.trailing).frame(maxWidth: 100)
+            }
+            .padding()
+            .activityBackgroundTint(olive)
+            .activitySystemActionForegroundColor(cream)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Label(context.attributes.title, systemImage: "timer").foregroundStyle(cream).lineLimit(1).minimumScaleFactor(0.7).padding(.leading, 6)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    time(context.state, stale: context.isStale).monospacedDigit().foregroundStyle(cream)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    Text(context.isStale ? "до \(context.state.endsAt.formatted(date: .omitted, time: .shortened))" : "почнеться о \(context.state.startsAt.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(cream.opacity(0.8))
+                }
+            } compactLeading: {
+                Image(systemName: "timer").foregroundStyle(Color(red: 0x9D / 255, green: 0xB2 / 255, blue: 0x7F / 255))
+            } compactTrailing: {
+                time(context.state, stale: context.isStale).monospacedDigit().frame(width: 52).foregroundStyle(Color(red: 0x9D / 255, green: 0xB2 / 255, blue: 0x7F / 255))
+            } minimal: {
+                Image(systemName: "timer").foregroundStyle(Color(red: 0x9D / 255, green: 0xB2 / 255, blue: 0x7F / 255))
+            }
+            .keylineTint(olive)
+        }
+    }
+}
+
 @main
 struct ParaWidgets: WidgetBundle {
     var body: some Widget {
         NoteWidget()
         PingLiveActivity()
         DateLiveActivity()
+        TaskLiveActivity()
     }
 }

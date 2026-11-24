@@ -27,6 +27,16 @@ struct PingAttributes: ActivityAttributes {
     var title: String
 }
 
+/// Timer of a planned activity (calendar): before the start it counts down to the start, then to the end.
+struct TaskAttributes: ActivityAttributes {
+    public struct ContentState: Codable, Hashable {
+        var startsAt: Date
+        var endsAt: Date
+    }
+    var taskId: String
+    var title: String
+}
+
 /// Countdown to an accepted date, on the lock screen and in the Dynamic Island.
 struct DateAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {

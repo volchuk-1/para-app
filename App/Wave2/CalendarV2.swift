@@ -323,6 +323,12 @@ struct ScheduleSheet: View {
     @State private var start = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
     @State private var end = Calendar.current.date(bySettingHour: 17, minute: 0, second: 0, of: Date()) ?? Date()
     @State private var error: String?
+    @State private var shifts4: [ShiftDay4] = []
+    @State private var monthOffset = 0
+    @State private var pickDay: String?
+    @State private var ownDay: DayID?
+    @State private var ownStart = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date()) ?? Date()
+    @State private var ownEnd = Calendar.current.date(bySettingHour: 14, minute: 0, second: 0, of: Date()) ?? Date()
     private let wd = ["нд", "пн", "вт", "ср", "чт", "пт", "сб"]
 
     var body: some View {
@@ -357,7 +363,7 @@ struct ScheduleSheet: View {
                 }
                 Section {
                     shiftGrid
-                } header: { Text("Мої змінні дні") } footer: { Text("Лише коли день не такий, як завжди (відгул, зміна у вихідний). Тап: робочий → вихідний → як завжди.") }
+                } header: { Text("Мої змінні дні") } footer: { Text("Тап по дню: вихідний, робочий за графіком або свої години — для змінного графіка. Решта днів — як завжди.") }
                 Section("Нове правило") {
                     Picker("Що", selection: $kind) { Text("Робота").tag("work"); Text("Справа").tag("activity"); Text("Інколи").tag("sometimes") }.pickerStyle(.segmented)
                     if kind != "work" { TextField("Назва (тренування, курси…)", text: $label) }
@@ -371,6 +377,35 @@ struct ScheduleSheet: View {
             .navigationTitle("Наш розклад").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
             .task { await load() }
+            .confirmationDialog(pickDay.flatMap { Evening.date($0) }.map { $0.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "uk_UA"))) } ?? "",
+                                isPresented: Binding(get: { pickDay != nil }, set: { if !$0 { pickDay = nil } }), titleVisibility: .visible) {
+                if let d = pickDay {
+                    Button("Як завжди") { Task { await run { try await API.current().setShift4(date: d, value: nil) } } }
+                    Button("Вихідний") { Task { await run { try await API.current().setShift4(date: d, value: "off") } } }
+                    Button("Робочий за графіком") { Task { await run { try await API.current().setShift4(date: d, value: "work") } } }
+                    Button("Свої години…") { ownDay = DayID(id: d) }
+                }
+            }
+            .sheet(item: $ownDay) { d in
+                NavigationStack {
+                    SoftForm {
+                        Section {
+                            DatePicker("Початок", selection: $ownStart, displayedComponents: .hourAndMinute)
+                            DatePicker("Кінець", selection: $ownEnd, displayedComponents: .hourAndMinute)
+                        } footer: { Text("Цього дня календар вважатиме тебе зайнятою(им) лише в ці години.") }
+                    }
+                    .navigationTitle(Evening.date(d.id).map { $0.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "uk_UA"))) } ?? d.id).navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { ownDay = nil } }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Зберегти") { let s = hm(ownStart), e = hm(ownEnd); ownDay = nil; Task { await run { try await API.current().setShift4(date: d.id, value: "work", start: s, end: e) } } }
+                                .disabled(hm(ownEnd) <= hm(ownStart))
+                        }
+                    }
+                }
+                .presentationDetents([.medium])
+                .tint(Theme.olive)
+            }
         }
         .tint(Theme.olive)
     }
@@ -390,21 +425,32 @@ struct ScheduleSheet: View {
     private var shiftGrid: some View {
         let cal = Dock.calendar
         let now = Date()
-        let first = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? now
+        let cur = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? now
+        let first = cal.date(byAdding: .month, value: monthOffset, to: cur) ?? cur
         let n = cal.range(of: .day, in: .month, for: first)?.count ?? 30
         let blanks = (cal.component(.weekday, from: first) + 5) % 7
-        let mine = Dictionary((data?.shifts ?? []).filter { $0.memberId == state.me?.id }.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
+        let mine = Dictionary(shifts4.filter { $0.memberId == state.me?.id }.map { ($0.date, $0) }, uniquingKeysWith: { a, _ in a })
+        return VStack(spacing: 8) {
+        HStack {
+            Button { monthOffset -= 1 } label: { Image(systemName: "chevron.left") }.disabled(monthOffset <= 0).buttonStyle(.plain)
+            Spacer()
+            Text(first.formatted(.dateTime.month(.wide).year().locale(Locale(identifier: "uk_UA"))).capitalized).font(.system(size: 14, weight: .semibold))
+            Spacer()
+            Button { monthOffset += 1 } label: { Image(systemName: "chevron.right") }.disabled(monthOffset >= 3).buttonStyle(.plain)
+        }
+        .foregroundStyle(Theme.olive)
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
             ForEach(["пн", "вт", "ср", "чт", "пт", "сб", "нд"], id: \.self) { Text($0).font(.system(size: 11)).foregroundStyle(Theme.muted) }
             ForEach(0..<blanks, id: \.self) { _ in Color.clear.frame(height: 40) }
             ForEach(1...n, id: \.self) { day in
                 let date = cal.date(byAdding: .day, value: day - 1, to: first) ?? first
                 let iso = Evening.iso(date)
-                let v = mine[iso]
-                Button { Task { await toggle(iso, v) } } label: {
+                let sd = mine[iso]
+                let v = sd?.value
+                Button { pickDay = iso } label: {
                     VStack(spacing: 0) {
                         Text("\(day)").font(.system(size: 12, weight: .semibold))
-                        Text(v == "off" ? "вих." : v == "work" ? "роб." : "·").font(.system(size: 9))
+                        Text(v == "off" ? "вих." : v == "work" ? (sd?.start.map { "\(short($0))–\(short(sd?.end ?? ""))" } ?? "роб.") : "·").font(.system(size: 9)).lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .frame(maxWidth: .infinity, minHeight: 40)
                     .background(v == "off" ? Theme.olive : v == "work" ? Theme.tan : Theme.paper, in: RoundedRectangle(cornerRadius: 10))
@@ -413,6 +459,13 @@ struct ScheduleSheet: View {
                 .buttonStyle(.plain)
             }
         }
+        }
+    }
+
+    /// "08:30" → "8:30", "14:00" → "14"
+    private func short(_ s: String) -> String {
+        let p = s.split(separator: ":"); guard let h = p.first.flatMap({ Int($0) }) else { return s }
+        return p.count > 1 && p[1] != "00" ? "\(h):\(p[1])" : "\(h)"
     }
 
     private func hm(_ d: Date) -> String { let c = Calendar.current.dateComponents([.hour, .minute], from: d); return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0) }
@@ -424,14 +477,13 @@ struct ScheduleSheet: View {
         }
         label = ""
     }
-    private func toggle(_ date: String, _ v: String?) async {
-        let next: String? = v == nil ? "work" : v == "work" ? "off" : nil
-        await run { try await API.current().setShift(date: date, value: next) }
-    }
     private func run(_ work: @escaping () async throws -> Void) async {
         do { try await work(); await load(); error = nil } catch { self.error = error.localizedDescription }
     }
-    private func load() async { data = try? await API.current().schedule() }
+    private func load() async {
+        data = try? await API.current().schedule()
+        shifts4 = (try? await API.current().schedule4().shifts) ?? shifts4
+    }
 }
 
 /// Наша історія: coloured folders stacked; a tap opens one.

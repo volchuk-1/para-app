@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var message: String?
     @State private var confirmSignOut = false
     @State private var scriptKey: String?
+    @State private var people = false
 
     var body: some View {
         NavigationStack {
@@ -39,6 +40,9 @@ struct SettingsView: View {
                 } header: { Text("Віджет «Витрати»") } footer: {
                     Text("Щоб твої витрати й борг ішли в «Мої гроші». Встав ключ у Scriptable: «Витрати» → «🔗 Підключити DaVincit». Бачиш це лише ти; новий ключ вимикає старий.")
                 }
+                Section {
+                    Button("Близькі й дні народження") { people = true }
+                } footer: { Text("Дні народження — у календарі обох, нагадування за 3 тижні, щоб відкрити збір.") }
                 Section("Сповіщення") {
                     NavigationLink("Перевірити push і віджети") { DiagnosticsView() }
                 }
@@ -64,6 +68,7 @@ struct SettingsView: View {
             .navigationTitle("Налаштування")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
             .onAppear { name = state.me?.name ?? "" }
+            .sheet(isPresented: $people) { PeopleSheet() }
             .confirmationDialog("Вийти? Повернутись можна лише з новим кодом від партнера.", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Вийти", role: .destructive) { state.signOut(); dismiss() }
             }

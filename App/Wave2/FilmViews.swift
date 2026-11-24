@@ -119,6 +119,7 @@ struct FilmPage: View {
                         }
                         Divider()
                         scores
+                        if item.mediaType == "tv" { Divider(); EpisodesSection(itemId: item.id) }
                         reviews
                         if let src = item.sourceUrl?.asURL {
                             Button { openURL(src) } label: { Label("Відео, звідки додали", systemImage: "play.rectangle") }.foregroundStyle(Theme.olive)

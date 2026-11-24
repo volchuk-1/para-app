@@ -19,6 +19,8 @@ struct SoonFilm: Codable, Hashable, Identifiable {
     let movieUrl: String?
     let poster: String?
     let onSale: Bool
+    var date: String? = nil
+    var remind: Bool? = nil
     var id: String { title + when }
 }
 struct CinemaFeed: Codable { let cinema: String; let now: [FeedFilm]; let soon: [SoonFilm] }
@@ -78,6 +80,7 @@ struct EveningPage: View {
                 .padding(.horizontal, 14)
                 .background(Theme.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 history
+                TripsBlock()
             }
             .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 130)
         }
@@ -263,6 +266,8 @@ struct CinemaPage: View {
     @State private var book: (FeedFilm, FeedSession)?
     @State private var showBook = false
     @State private var error: String?
+    @State private var reminded: Set<String> = []
+    @State private var unreminded: Set<String> = []
     private let bg = Color(hex: 0x1C1A1A), card = Color(hex: 0x272424), accent = Color(hex: 0xF2B640)
     private var cal: Calendar { Dock.calendar }
 
@@ -374,12 +379,29 @@ struct CinemaPage: View {
                         }
                     Text(s.when).font(.system(size: 12, weight: .bold)).foregroundStyle(accent).padding(.top, 4)
                     Text(s.title).font(.system(size: 14, weight: .semibold)).lineLimit(2)
-                    if let u = s.movieUrl?.asURL {
-                        Button("Детальніше") { openURL(u) }.font(.system(size: 12)).padding(.horizontal, 10).frame(height: 30).background(card, in: Capsule())
+                    HStack(spacing: 6) {
+                        if let d = s.date {
+                            let on = reminded.contains(s.title) || (s.remind == true && !unreminded.contains(s.title))
+                            Button { Task { await toggleRemind(s, d, on) } } label: {
+                                Label(on ? "Нагадаю" : "Нагадати", systemImage: on ? "bell.fill" : "bell")
+                            }
+                            .font(.system(size: 12, weight: .semibold)).padding(.horizontal, 10).frame(height: 30)
+                            .background(on ? accent : card, in: Capsule()).foregroundStyle(on ? bg : Color(hex: 0xF3EEE6))
+                        }
+                        if let u = s.movieUrl?.asURL {
+                            Button("Детальніше") { openURL(u) }.font(.system(size: 12)).padding(.horizontal, 10).frame(height: 30).background(card, in: Capsule())
+                        }
                     }
                 }
             }
         }
+    }
+
+    private func toggleRemind(_ s: SoonFilm, _ date: String, _ on: Bool) async {
+        do {
+            if on { try await API.current().unremind(title: s.title); reminded.remove(s.title); unreminded.insert(s.title) }
+            else { try await API.current().remind(title: s.title, date: date, movieUrl: s.movieUrl); reminded.insert(s.title); unreminded.remove(s.title) }
+        } catch { self.error = error.localizedDescription }
     }
 
     private func dayLabel(_ d: String, today: String) -> String {

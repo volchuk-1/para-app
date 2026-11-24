@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Every screen the bar can open.
 enum Page: String, Hashable {
-    case home, archive, week, month, invites, watch, books, wishes, me, finance, games, money, evening, cinema
+    case home, archive, week, month, invites, watch, books, wishes, me, finance, games, money, evening, cinema, cal
 }
 
 /// One group of the bar: a circle at rest, a pill when it is where you are, a sub-menu on the second tap.
@@ -166,7 +166,7 @@ struct WaveBar: View {
     }
 
     private func section(of p: Page) -> String {
-        sections.first { $0.start == p || $0.subs.contains { $0.page == p } }?.id ?? "home"
+        sections.first { $0.start == p || $0.subs.contains { $0.page == p } }?.id ?? ([.week, .month].contains(p) ? "calendar" : "home")
     }
 }
 

@@ -54,6 +54,7 @@ final class Store: ObservableObject {
         Cache.save(events, "events")
         Reminders.sync(events)
         LiveDates.sync(events)
+        LiveTasks.sync()
     }
 
     func upsert(_ e: Event) {

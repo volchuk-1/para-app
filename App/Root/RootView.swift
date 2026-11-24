@@ -55,9 +55,9 @@ struct MainView: View {
     /// HomeView still talks in old tabs; map them onto pages.
     private var legacyTab: Binding<Tab> {
         Binding(get: {
-            switch page { case .week, .month, .invites: return .calendar; case .watch, .books: return .together; case .wishes: return .us; default: return .home }
+            switch page { case .week, .month, .invites, .cal, .cinema: return .calendar; case .watch, .books: return .together; case .wishes: return .us; default: return .home }
         }, set: { t in
-            switch t { case .home: page = .home; case .calendar: page = .week; case .together: page = .watch; case .us: page = .wishes }
+            switch t { case .home: page = .home; case .calendar: page = .cal; case .together: page = .watch; case .us: page = .wishes }
         })
     }
 
@@ -68,8 +68,8 @@ struct MainView: View {
                        + (moneyOn ? [BarSub(id: "money", icon: "wallet.pass.fill", label: "Гроші", page: .money)] : [])
                        + [BarSub(id: "archive", icon: "photo.on.rectangle", label: "Історія", page: .archive),
                           BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil)]),
-            BarSection(id: "calendar", icon: "calendar", avatar: nil, label: "Календар", note: "", start: .week,
-                       subs: [BarSub(id: "week", icon: "list.bullet", label: "Тиждень", page: .week), BarSub(id: "month", icon: "calendar", label: "Місяць", page: .month),
+            BarSection(id: "calendar", icon: "calendar", avatar: nil, label: "Календар", note: "", start: .cal,
+                       subs: [BarSub(id: "cal", icon: "calendar", label: "Календар", page: .cal),
                               BarSub(id: "cinema", icon: "film.fill", label: "Кіно", page: .cinema), BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites)]),
             BarSection(id: "together", icon: "heart.fill", avatar: nil, label: "Разом", note: "", start: .evening,
                        subs: [BarSub(id: "evening", icon: "moon.stars.fill", label: "Вечір", page: .evening), BarSub(id: "watch", icon: "popcorn.fill", label: "Дивимось", page: .watch),
@@ -83,15 +83,16 @@ struct MainView: View {
             Group {
                 switch page {
                 case .home: HomeView(tab: legacyTab, route: $route)
-                case .archive: HistoryPage()
+                case .archive: HistoryFeed()
+                case .cal: CalendarPage()
                 case .week: WeekPage()
                 case .month: MonthPage()
                 case .invites: InvitesPage()
-                case .watch: WatchPage(route: $route)
+                case .watch: CinemaHome(route: $route)
                 case .books: BooksPage()
                 case .wishes: UsView(route: $route, who: $wishOwner)
                 case .me: MePage(page: $page) { menu = .settings }
-                case .finance: FinancePage()
+                case .finance: BanksPage()
                 case .money: MoneyPage()
                 case .evening: EveningPage()
                 case .cinema: CinemaPage()
@@ -137,7 +138,7 @@ struct MainView: View {
             await countFree()
             moneyOn = (try? await API.current().money())?.connected ?? false
         }
-        .onChange(of: phase) { _, p in if p == .active { Task { await store.refreshAll(); await countFree() } } }
+        .onChange(of: phase) { _, p in if p == .active { LiveTasks.sync(); Task { await store.refreshAll(); await countFree() } } }
         .onChange(of: state.pendingShare) { _, u in
             if let u { route = .share(u); state.pendingShare = nil }
         }
