@@ -10,7 +10,8 @@ struct InviteBooking: View {
     @Environment(\.dismiss) private var dismiss
     let start: Start
 
-    @State private var pick = ""          // "w:<watchId>" | dinner | walk | own
+    @State private var pick = ""          // cinema | dinner | walk | own
+    @State private var filmId: String?    // cinema: the film from «Хочемо», picked inside the card
     @State private var day = ""
     @State private var avail: [DayPlan] = []
     @State private var sessions: [String: [CinemaSession]] = [:]
@@ -21,14 +22,15 @@ struct InviteBooking: View {
     @State private var busy = false
     @State private var error: String?
 
-    private let acts: [(String, String, String)] = [("dinner", "fork.knife", "Вечеря"), ("walk", "tree.fill", "Прогулянка"), ("own", "sparkles", "Своє")]
+    private let acts: [(String, String, String)] = [("cinema", "film.fill", "Кіно"), ("dinner", "fork.knife", "Вечеря"), ("walk", "tree.fill", "Прогулянка"), ("own", "sparkles", "Своє")]
     private var cal: Calendar { Dock.calendar }
     private var movies: [WatchItem] {
         var m = store.watch.filter { $0.mediaType == "movie" && $0.status != .done && $0.status != .dropped }
         if case .film(let id) = start, !m.contains(where: { $0.id == id }), let w = store.watch.first(where: { $0.id == id }) { m.insert(w, at: 0) }
         return Array(m.prefix(6))
     }
-    private var film: WatchItem? { pick.hasPrefix("w:") ? store.watch.first { $0.id == String(pick.dropFirst(2)) } : nil }
+    private var film: WatchItem? { pick == "cinema" ? filmId.flatMap { id in store.watch.first { $0.id == id } } : nil }
+    private var act: (String, String, String) { acts.first { $0.0 == pick } ?? acts[3] }
     private var filmSessions: [CinemaSession]? { film.flatMap { sessions[$0.id] } }
 
     var body: some View {
@@ -55,23 +57,31 @@ struct InviteBooking: View {
         .task { await setup() }
     }
 
+    /// Neutral header: warm gradient + a big faint sign of what we do. No film posters here — they made the screen
+    /// wider than the phone; the film is picked inside the card.
     private var hero: some View {
-        ZStack {
-            if let f = film, let u = f.backdropUrl ?? f.posterUrl { RemoteImage(url: u) } else {
-                RadialGradient(colors: [Theme.coffee, Theme.oliveDeep], center: .top, startRadius: 20, endRadius: 420)
+        Color.clear
+            .frame(maxWidth: .infinity).frame(height: 440)
+            .background {
+                ZStack {
+                    RadialGradient(colors: [Theme.coffee, Theme.oliveDeep], center: .top, startRadius: 20, endRadius: 420)
+                    Image(systemName: act.1).font(.system(size: 230, weight: .bold)).foregroundStyle(Theme.sand.opacity(0.07))
+                        .rotationEffect(.degrees(-12)).offset(x: 90, y: 40)
+                        .id(pick).transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    LinearGradient(colors: [.black.opacity(0.3), .clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                }
             }
-            LinearGradient(colors: [.black.opacity(0.45), .black.opacity(0.15), .black.opacity(0.7)], startPoint: .top, endPoint: .bottom)
-        }
-        .frame(height: 440).frame(maxWidth: .infinity).clipped().ignoresSafeArea(edges: .top)
-        .animation(.easeInOut(duration: 0.35), value: pick)
+            .clipped()
+            .ignoresSafeArea(edges: .top)
+            .animation(.easeInOut(duration: 0.35), value: pick)
     }
 
     private var title: some View {
         VStack(spacing: 4) {
             Text("ПОБАЧЕННЯ").font(.system(size: 13, weight: .bold)).tracking(2.6).foregroundStyle(Theme.paper)
-            Text(film != nil ? "КІНО" : (acts.first { $0.0 == pick }?.2 ?? "Своє").uppercased())
+            Text(act.2.uppercased())
                 .font(.system(size: 64, weight: .bold)).tracking(-2.5).foregroundStyle(Theme.sand).lineLimit(1).minimumScaleFactor(0.6)
-            Text(film.map { "\($0.title) · Multiplex" } ?? "\(state.me?.name ?? "") і \(state.partner?.name ?? "")")
+            Text(film.map { "\($0.title) · Multiplex" } ?? (pick == "cinema" ? "Multiplex «Паннонія»" : "\(state.me?.name ?? "") і \(state.partner?.name ?? "")"))
                 .font(.system(size: 13, weight: .bold)).tracking(1.4).textCase(.uppercase).foregroundStyle(Theme.paper).lineLimit(1).padding(.horizontal, 20)
         }
         .contentTransition(.opacity)
@@ -81,7 +91,6 @@ struct InviteBooking: View {
     private var chips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(movies) { m in chip("w:\(m.id)", "film.fill", m.title) }
                 ForEach(acts, id: \.0) { a in chip(a.0, a.1, a.2) }
             }
             .padding(.horizontal, 20)
@@ -102,10 +111,11 @@ struct InviteBooking: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if pick == "cinema" { filmPicker }
             HStack {
                 Label("Оберіть день", systemImage: "calendar").font(.system(size: 14, weight: .medium)).foregroundStyle(Color(hex: 0x6F695E))
                 Spacer()
-                Text(film != nil ? "бліді — без сеансів" : "♥ — обоє вільні").font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+                Text(filmSessions?.isEmpty == false ? "бліді — без сеансів" : "♥ — обоє вільні").font(.system(size: 12.5)).foregroundStyle(Theme.muted)
             }
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -143,7 +153,7 @@ struct InviteBooking: View {
                 Label("Коли приходимо", systemImage: "clock").font(.system(size: 14, weight: .medium)).foregroundStyle(Color(hex: 0x6F695E))
                 stepper
                 if pick == "own" { TextField("Що робимо?", text: $custom).field() }
-                TextField("Де (необов'язково)", text: $place).field()
+                if pick != "cinema" { TextField("Де (необов'язково)", text: $place).field() }
             }
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -166,6 +176,47 @@ struct InviteBooking: View {
         .padding(.horizontal, 18).padding(.vertical, 20)
         .background(Theme.paper, in: RoundedRectangle(cornerRadius: 38, style: .continuous))
         .padding(.horizontal, 12)
+        .foregroundStyle(Theme.ink)
+    }
+
+    /// Films from «Хочемо»: tap one to see its sessions, tap it again to go without a film.
+    private var filmPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Який фільм", systemImage: "popcorn").font(.system(size: 14, weight: .medium)).foregroundStyle(Color(hex: 0x6F695E))
+                Spacer()
+                Text(film == nil ? "можна й без" : "ще раз — зняти").font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+            }
+            if movies.isEmpty {
+                Text("У «Хочемо» нема фільмів — обери день і час, фільм вирішите там.").font(.system(size: 14)).foregroundStyle(Theme.muted)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(movies) { m in filmTile(m) }
+                    }
+                    .padding(.horizontal, 18)
+                }
+                .padding(.horizontal, -18)
+            }
+        }
+    }
+
+    private func filmTile(_ m: WatchItem) -> some View {
+        let on = filmId == m.id
+        return Button {
+            withAnimation(.snappy) { filmId = on ? nil : m.id; time = nil; day = "" }
+            Task { await afterPick() }
+        } label: {
+            VStack(spacing: 6) {
+                Color.clear.frame(width: 64, height: 92)
+                    .overlay { RemoteImage(url: m.posterUrl ?? m.backdropUrl) }
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.ink, lineWidth: on ? 2 : 0))
+                Text(m.title).font(.system(size: 11.5, weight: .semibold)).lineLimit(2).multilineTextAlignment(.center)
+                    .frame(width: 74, height: 30, alignment: .top)
+            }
+            .opacity(filmId == nil || on ? 1 : 0.5)
+        }
         .foregroundStyle(Theme.ink)
     }
 
@@ -197,7 +248,7 @@ struct InviteBooking: View {
             .frame(width: 74, height: 90)
             .background(day == d ? Theme.paper : Theme.tan.opacity(0.45), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Theme.ink, lineWidth: day == d ? 1.6 : 0))
-            .overlay(alignment: .bottom) { if film == nil, plan?.isFree == true { Image(systemName: "heart.fill").font(.system(size: 10)).foregroundStyle(Theme.olive).padding(.bottom, 6) } }
+            .overlay(alignment: .bottom) { if filmSessions?.isEmpty != false, plan?.isFree == true { Image(systemName: "heart.fill").font(.system(size: 10)).foregroundStyle(Theme.olive).padding(.bottom, 6) } }
             .opacity(off ? 0.35 : 1)
         }
         .disabled(off)
@@ -206,9 +257,9 @@ struct InviteBooking: View {
 
     private func setup() async {
         switch start {
-        case .film(let id): pick = "w:\(id)"
+        case .film(let id): pick = "cinema"; filmId = id
         case .day(let d): pick = "dinner"; day = d
-        case .blank: pick = movies.first.map { "w:\($0.id)" } ?? "dinner"
+        case .blank: pick = "cinema"
         }
         let today = Evening.iso(Date())
         let end = Evening.iso(cal.date(byAdding: .day, value: 34, to: Date()) ?? Date())
@@ -234,9 +285,9 @@ struct InviteBooking: View {
         let hm = t.split(separator: ":").compactMap { Int($0) }
         guard let base = Evening.date(day), hm.count == 2,
               let startsAt = cal.date(bySettingHour: hm[0], minute: hm[1], second: 0, of: base) else { return }
-        let title: String = f.map { "Кіно: \($0.title)" } ?? (pick == "own" ? custom.trimmingCharacters(in: .whitespaces) : acts.first { $0.0 == pick }?.2 ?? "")
+        let title: String = f.map { "Кіно: \($0.title)" } ?? (pick == "own" ? custom.trimmingCharacters(in: .whitespaces) : act.2)
         if title.isEmpty { error = "Напиши, що робимо"; return }
-        var d = EventDraft(ownerId: nil, title: title, startsAt: startsAt, endsAt: nil, place: f != nil ? "Multiplex «Паннонія»" : (place.isEmpty ? nil : place),
+        var d = EventDraft(ownerId: nil, title: title, startsAt: startsAt, endsAt: nil, place: pick == "cinema" ? "Multiplex «Паннонія»" : (place.isEmpty ? nil : place),
                            mapUrl: nil, note: nil, dress: nil, message: nil)
         d.watchId = f?.id
         d.buyUrl = session?.buyUrl

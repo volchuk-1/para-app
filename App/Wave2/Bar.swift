@@ -23,9 +23,9 @@ struct BarSub: Identifiable, Equatable {
     let page: Page?   // nil = opens a sheet (settings, code)
 }
 
-/// Bottom bar from Viktor's reference video, mirrored: «+» on the left, the row on the right.
-/// A tapped circle grows into a pill and pushes the others; tapping the open pill unfolds its sub-menu in place
-/// (the other circles blur away, the section circle stays as «back»).
+/// Bottom bar from Viktor's reference video, mirrored: «+» on the left, the circles on the right.
+/// Tapping a circle turns it olive (dark icon) and slides its sub-menu out to its LEFT, pushing the row;
+/// the other circles stay (a little smaller) and «+» steps aside. The row folds back after a pick or a pause.
 struct WaveBar: View {
     @Binding var page: Page
     let sections: [BarSection]
@@ -33,12 +33,14 @@ struct WaveBar: View {
     var onSheet: (String) -> Void
 
     @State private var active = "home"
-    @State private var sub = false
+    @State private var open = false
     @State private var lastPick: [String: Page] = [:]
-    private let spring = Animation.spring(response: 0.5, dampingFraction: 0.7)
+    @State private var width: CGFloat = 360
+    @State private var foldTicket = 0
+    private let spring = Animation.spring(response: 0.48, dampingFraction: 0.72)
 
     var body: some View {
-        HStack(alignment: .bottom) {
+        HStack(alignment: .center, spacing: 0) {
             Button(action: onAdd) {
                 Image(systemName: "plus").font(.system(size: 22, weight: .bold))
                     .frame(width: 52, height: 52)
@@ -46,115 +48,138 @@ struct WaveBar: View {
                     .foregroundStyle(Theme.cream)
                     .shadow(color: Theme.coffee.opacity(0.35), radius: 14, y: 10)
             }
-            .opacity(sub ? 0 : 1).blur(radius: sub ? 8 : 0).scaleEffect(sub ? 0.6 : 1)
-            .allowsHitTesting(!sub)
+            .frame(width: open ? 0 : 52)
+            .opacity(open ? 0 : 1).blur(radius: open ? 8 : 0).scaleEffect(open ? 0.4 : 1)
+            .allowsHitTesting(!open)
             .accessibilityLabel("Додати")
-            Spacer(minLength: 8)
+            Spacer(minLength: 0)
             row
         }
+        .background(GeometryReader { g in
+            Color.clear.onAppear { width = g.size.width }.onChange(of: g.size.width) { _, w in width = w }
+        })
         .padding(.horizontal, 14)
         .padding(.bottom, 6)
+        .animation(spring, value: open)
+        .animation(spring, value: active)
         .onAppear { active = section(of: page) }
-        .onChange(of: page) { _, p in if !sub { withAnimation(spring) { active = section(of: p) } } }
+        .onChange(of: page) { _, p in if !open { withAnimation(spring) { active = section(of: p) } } }
         .sensoryFeedback(.selection, trigger: page)
-        .sensoryFeedback(.impact(weight: .light), trigger: sub)
+        .sensoryFeedback(.impact(weight: .light), trigger: open)
+    }
+
+    private var current: BarSection? { sections.first { $0.id == active } }
+    private var small: CGFloat { open ? 36 : 44 }
+
+    /// Subs share what is left of the row: 40…60 pt each.
+    private var subWidth: CGFloat {
+        guard open, let s = current, !s.subs.isEmpty else { return 0 }
+        let others = CGFloat(sections.count - 1), n = CGFloat(s.subs.count)
+        let room = width - 14 - 44 - others * small - (others + n) * 4
+        return max(40, min(60, (room / n).rounded(.down)))
     }
 
     private var row: some View {
-        HStack(spacing: 6) {
-            if sub, let s = sections.first(where: { $0.id == active }) {
-                Button { withAnimation(spring) { sub = false } } label: { circle(s, back: true) }
-                    .transition(.blurReplace)
-                ForEach(Array(s.subs.enumerated()), id: \.element.id) { i, x in
-                    Button { pick(x, in: s) } label: { subItem(x) }
-                        .buttonStyle(.plain)
-                        .transition(.blurReplace.animation(spring.delay(0.05 * Double(i))))
+        HStack(spacing: 4) {
+            ForEach(sections.reversed()) { s in
+                if open, s.id == active {
+                    ForEach(Array(s.subs.enumerated()), id: \.element.id) { i, x in
+                        Button { pick(x, in: s) } label: { subItem(x) }
+                            .buttonStyle(.plain)
+                            .transition(AnyTransition.slideOut.animation(spring.delay(0.045 * Double(s.subs.count - 1 - i))))
+                    }
                 }
-            } else {
-                ForEach(sections.reversed()) { s in
-                    Button { tap(s) } label: { item(s) }
-                        .buttonStyle(.plain)
-                        .transition(.blurReplace)
-                }
+                Button { tap(s) } label: { item(s) }
+                    .buttonStyle(.plain)
             }
         }
         .padding(7)
         .background(Theme.paper, in: Capsule())
         .shadow(color: .black.opacity(0.16), radius: 16, y: 10)
-        .animation(spring, value: active)
-        .animation(spring, value: sub)
     }
 
     private func item(_ s: BarSection) -> some View {
-        let open = s.id == active
-        return HStack(spacing: 0) {
-            if open {
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(s.label).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                    Text(s.note).font(.system(size: 11.5)).foregroundStyle(Theme.muted).lineLimit(1)
-                }
-                .frame(maxWidth: 112, alignment: .trailing)
-                .padding(.leading, 12)
-                .transition(.blurReplace)
+        let on = s.id == active
+        let size = on ? 44 : small
+        return ZStack {
+            Circle().fill(on ? Theme.olive : Theme.tan)
+            if let a = s.avatar {
+                Text(a).font(.serif(15, .bold)).frame(width: 34, height: 34)
+                    .background(Theme.coffee, in: Circle()).foregroundStyle(Theme.cream)
+                    .scaleEffect(on || !open ? 1 : 0.84)
+            } else if let i = s.icon {
+                Image(systemName: i).font(.system(size: open && !on ? 17 : 19, weight: .semibold)).foregroundStyle(Theme.ink)
             }
-            icon(s, open: open)
         }
-        .frame(height: 44)
-        .background(Theme.tan, in: Capsule())
-        .foregroundStyle(Theme.ink)
-        .contentShape(Capsule())
+        .frame(width: size, height: size)
+        .contentShape(Circle())
         .accessibilityLabel(s.label)
-    }
-
-    private func circle(_ s: BarSection, back: Bool) -> some View {
-        icon(s, open: false)
-            .frame(width: 44, height: 44)
-            .background(Theme.olive, in: Circle())
-            .foregroundStyle(Theme.cream)
-            .accessibilityLabel("Назад")
-    }
-
-    @ViewBuilder private func icon(_ s: BarSection, open: Bool) -> some View {
-        if let a = s.avatar {
-            Text(a).font(.serif(15, .bold)).frame(width: 34, height: 34)
-                .background(Theme.coffee, in: Circle()).foregroundStyle(Theme.cream)
-                .frame(width: 44, height: 44)
-        } else if let i = s.icon {
-            Image(systemName: i).font(.system(size: 19, weight: .semibold))
-                .frame(width: 44, height: 44)
-                .foregroundStyle(open ? Theme.olive : Theme.ink)
-        }
     }
 
     private func subItem(_ x: BarSub) -> some View {
         let on = x.page != nil && x.page == page
         return VStack(spacing: 2) {
-            Image(systemName: x.icon).font(.system(size: 20, weight: .semibold)).scaleEffect(on ? 1.08 : 1)
-            Text(x.label).font(.system(size: 11, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            Image(systemName: x.icon).font(.system(size: 18, weight: .semibold)).scaleEffect(on ? 1.08 : 1)
+            Text(x.label).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
         }
-        .frame(width: 62, height: 52)
-        .background(on ? Theme.tan.opacity(0.6) : .clear, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .foregroundStyle(on ? Theme.olive : Theme.muted)
+        .frame(width: subWidth, height: 46)
+        .background(on ? Theme.olive.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .foregroundStyle(Theme.olive)
+        .contentShape(Rectangle())
     }
 
     private func tap(_ s: BarSection) {
         if s.id == active {
-            if !s.subs.isEmpty { withAnimation(spring) { sub = true } }
+            if open { fold() } else if !s.subs.isEmpty { unfold() }
             return
         }
         withAnimation(spring) { active = s.id }
         page = lastPick[s.id] ?? s.start
+        if s.subs.isEmpty { fold() } else { unfold() }
     }
 
     private func pick(_ x: BarSub, in s: BarSection) {
+        fold(after: 0.65)
         guard let p = x.page else { onSheet(x.id); return }
         lastPick[s.id] = p
         page = p
     }
 
+    private func unfold() {
+        withAnimation(spring) { open = true }
+        fold(after: 6)
+    }
+
+    /// Folds the row now or after a pause; a newer tap cancels an older pause.
+    private func fold(after seconds: Double = 0) {
+        foldTicket += 1
+        let ticket = foldTicket
+        Task { @MainActor in
+            if seconds > 0 { try? await Task.sleep(for: .seconds(seconds)) }
+            guard ticket == foldTicket, open else { return }
+            withAnimation(spring) { open = false; active = section(of: page) }
+        }
+    }
+
     private func section(of p: Page) -> String {
         sections.first { $0.start == p || $0.subs.contains { $0.page == p } }?.id ?? "home"
     }
+}
+
+/// Sub-items slide out from behind their circle: from the right, small and blurred.
+private struct SlideOut: ViewModifier {
+    let shown: Bool
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .blur(radius: shown ? 0 : 6)
+            .scaleEffect(shown ? 1 : 0.45, anchor: .trailing)
+            .offset(x: shown ? 0 : 22)
+    }
+}
+
+extension AnyTransition {
+    static var slideOut: AnyTransition { .modifier(active: SlideOut(shown: false), identity: SlideOut(shown: true)) }
 }
 
 /// Bell, top right of every screen.

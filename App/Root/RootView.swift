@@ -66,7 +66,7 @@ struct MainView: View {
         return [
             BarSection(id: "me", icon: nil, avatar: String(state.me?.name.prefix(1) ?? "Я"), label: state.me?.name ?? "Я", note: "налаштування", start: .me,
                        subs: [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil), BarSub(id: "finance", icon: "dollarsign.circle.fill", label: "Фінанси", page: .finance),
-                              BarSub(id: "games", icon: "gamecontroller.fill", label: "Ігри", page: .games), BarSub(id: "code", icon: "key.fill", label: "Код", page: nil)]),
+                              BarSub(id: "games", icon: "gamecontroller.fill", label: "Ігри", page: .games)]),
             BarSection(id: "home", icon: "house.fill", avatar: nil, label: "Головна", note: next, start: .home,
                        subs: [BarSub(id: "home", icon: "house.fill", label: "Головна", page: .home), BarSub(id: "archive", icon: "square.stack.fill", label: "Історія", page: .archive)]),
             BarSection(id: "calendar", icon: "calendar", avatar: nil, label: "Календар", note: freeTonight.map { "\($0) вільн. вечори" } ?? "тиждень", start: .week,
