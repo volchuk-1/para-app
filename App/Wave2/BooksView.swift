@@ -57,21 +57,53 @@ struct BooksPage: View {
         }
     }
 
+    /// A carved wooden bookcase without glass: arched top, warm light inside, shelves of spines.
     private var shelf: some View {
-        ZStack(alignment: .bottom) {
-            RoundedRectangle(cornerRadius: 6).fill(LinearGradient(colors: [Color(hex: 0xB08A66), Color(hex: 0x8A6748)], startPoint: .top, endPoint: .bottom))
-                .frame(height: 16).shadow(color: Color(hex: 0x3C2814).opacity(0.25), radius: 8, y: 8)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .bottom, spacing: 5) {
-                    ForEach(list) { b in
-                        Button { withAnimation(.spring(response: 0.55, dampingFraction: 0.75)) { open = b } } label: { Spine(book: b) }
-                            .buttonStyle(.plain)
+        let perRow = 7
+        let rows = stride(from: 0, to: max(list.count, 1), by: perRow).map { Array(list[min($0, list.count)..<min($0 + perRow, list.count)]) }
+        let shown = rows.count < 2 ? rows + Array(repeating: [Book](), count: 2 - rows.count) : rows
+        return VStack(spacing: 0) {
+            ZStack {
+                ArchTop().fill(LinearGradient(colors: [Color(hex: 0x7A4E2D), Color(hex: 0x5A3720)], startPoint: .top, endPoint: .bottom))
+                RoundedRectangle(cornerRadius: 4).stroke(Color(hex: 0xFFD696).opacity(0.45), lineWidth: 2).frame(width: 24, height: 24).rotationEffect(.degrees(45)).offset(y: -2)
+                HStack(spacing: 7) { ForEach(0..<22, id: \.self) { _ in Circle().fill(Color(hex: 0xFFD696).opacity(0.35)).frame(width: 3, height: 3) } }
+                    .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 7)
+            }
+            .frame(height: 58)
+            VStack(spacing: 0) {
+                ForEach(Array(shown.enumerated()), id: \.offset) { _, row in
+                    VStack(spacing: 0) {
+                        HStack(alignment: .bottom, spacing: 4) {
+                            ForEach(row) { b in
+                                Button { withAnimation(.spring(response: 0.55, dampingFraction: 0.75)) { open = b } } label: { Spine(book: b) }
+                                    .buttonStyle(.plain)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10).frame(height: 206, alignment: .bottom)
+                        LinearGradient(colors: [Color(hex: 0xA8744A), Color(hex: 0x8A5A34), Color(hex: 0x6B4428)], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 9).shadow(color: .black.opacity(0.5), radius: 4, y: 4)
                     }
                 }
-                .padding(.horizontal, 14).padding(.bottom, 16)
+                if list.isEmpty {
+                    Text("Шафа чекає на першу книжку — за штрихкодом або вручну.").font(.system(size: 14)).foregroundStyle(Color(hex: 0xFFE2B4).opacity(0.75))
+                        .multilineTextAlignment(.center).padding(.vertical, 8)
+                }
             }
+            .padding(.top, 8)
+            .background {
+                ZStack {
+                    RadialGradient(colors: [Color(hex: 0x4A2D18), Color(hex: 0x24150B)], center: .top, startRadius: 10, endRadius: 420)
+                    RadialGradient(colors: [Color(hex: 0xFFC478).opacity(0.22), .clear], center: .top, startRadius: 0, endRadius: 220)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.black.opacity(0.35), lineWidth: 6).blur(radius: 6).clipShape(RoundedRectangle(cornerRadius: 10)))
+            }
+            .padding(.horizontal, 12).padding(.bottom, 14)
+            .background(LinearGradient(colors: [Color(hex: 0x3B2414), Color(hex: 0x6B4428), Color(hex: 0x3B2414)], startPoint: .leading, endPoint: .trailing),
+                        in: UnevenRoundedRectangle(bottomLeadingRadius: 18, bottomTrailingRadius: 18))
         }
-        .frame(height: 230)
+        .shadow(color: Color(hex: 0x2B1B14).opacity(0.35), radius: 20, y: 14)
     }
 
     private func addButton(_ t: String, _ icon: String, _ a: @escaping () -> Void) -> some View {
@@ -118,17 +150,38 @@ enum BookLook {
     static func light(_ b: Book) -> Bool { [0xC9B58F, 0xE2C7A7].contains(hex(b)) }
 }
 
+/// Arched top of the bookcase.
+struct ArchTop: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.maxY * 0.75))
+        p.addQuadCurve(to: CGPoint(x: r.maxX, y: r.maxY * 0.75), control: CGPoint(x: r.midX, y: -r.maxY * 0.75))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
 struct Spine: View {
     let book: Book
+    private var width: CGFloat { CGFloat(30 + ((book.pages ?? 200) % 4) * 3) }
     var body: some View {
         ZStack(alignment: .top) {
             BookLook.color(book)
+            // a slice of the real cover gives the spine its colours
+            if let u = book.coverUrl {
+                Group { if u.contains("/files/") { AuthImage(url: u) } else { RemoteImage(url: u) } }
+                    .scaleEffect(1.2)
+                LinearGradient(colors: [.black.opacity(0.4), .black.opacity(0.1), .black.opacity(0.15), .black.opacity(0.5)], startPoint: .leading, endPoint: .trailing)
+            }
             Text(book.title).font(.system(size: 11.5, weight: .bold)).lineLimit(1)
-                .fixedSize().rotationEffect(.degrees(-90)).frame(width: 34).frame(maxHeight: .infinity)
-                .foregroundStyle(BookLook.light(book) ? Theme.ink : Theme.cream)
+                .fixedSize().rotationEffect(.degrees(-90)).frame(width: width).frame(maxHeight: .infinity)
+                .foregroundStyle(book.coverUrl != nil || !BookLook.light(book) ? Theme.cream : Theme.ink)
+                .shadow(color: .black.opacity(book.coverUrl != nil ? 0.7 : 0), radius: 2)
             if book.status == .reading { Circle().fill(Theme.paper).frame(width: 8, height: 8).padding(.top, 8) }
         }
-        .frame(width: 34, height: CGFloat(150 + (book.pages ?? 200) % 60))
+        .frame(width: width, height: CGFloat(150 + (book.pages ?? 200) % 50))
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 2, bottomTrailingRadius: 2, topTrailingRadius: 4))
         .shadow(color: .black.opacity(0.15), radius: 2, y: 2)
         .rotationEffect(.degrees(book.status == .paused ? -7 : 0), anchor: .bottom)
@@ -251,6 +304,7 @@ struct AddBookSheet: View {
     @State private var query = ""
     @State private var results: [IsbnFound] = []
     @State private var searchNote: String?
+    @State private var scanned: String?
 
     var body: some View {
         NavigationStack {
@@ -318,18 +372,19 @@ struct AddBookSheet: View {
     }
 
     private func fill(_ b: IsbnFound) {
-        title = b.title; author = b.author ?? ""; pages = b.pages.map(String.init) ?? ""; cover = b.coverUrl; isbn = b.isbn
-        results = []; searchNote = "Заповнено — перевір і натисни «Додати»."
+        // a scanned barcode is this very edition: it stays the book's ISBN
+        title = b.title; author = b.author ?? ""; pages = b.pages.map(String.init) ?? ""; cover = b.coverUrl; isbn = scanned ?? b.isbn
+        results = []; searchNote = scanned != nil ? "Заповнено, ISBN \(scanned!) прив'язано — перевір і натисни «Додати»." : "Заповнено — перевір і натисни «Додати»."
     }
 
     private func lookup(_ code: String) async {
-        isbn = code
+        isbn = code; scanned = code
         note = "Шукаю \(code)…"
         do {
             if let f = try await API.current().isbn(code) {
                 title = f.title; author = f.author ?? ""; pages = f.pages.map(String.init) ?? ""; cover = f.coverUrl; note = "Знайшов. Перевір і натисни «Додати»."
             } else {
-                note = "У базі нема (українських видань там часто нема) — допиши назву, а обкладинку сфотографуєш потім."
+                note = "Штрихкод \(code) у базах не знайшовся. Напиши назву або автора в пошуку вгорі — знайду книжку й прив'яжу до неї цей ISBN."
             }
         } catch { note = error.localizedDescription }
     }

@@ -34,7 +34,8 @@ struct CalendarPage: View {
                     header
                     Group {
                         switch mode {
-                        case .day, .week: strips
+                        case .day: hourList
+                        case .week: strips
                         case .month: monthGrid
                         case .year: yearGrid
                         }
@@ -52,7 +53,8 @@ struct CalendarPage: View {
                         .padding(14).background(Theme.ink, in: RoundedRectangle(cornerRadius: 20, style: .continuous)).foregroundStyle(Theme.paper)
                     }
                     if mode == .day || mode == .week {
-                        Text("♥ — вечір, коли ви обоє вільні: тап — запросити. Затисни кнопку вгорі — Тиждень, Місяць, Рік.")
+                        Text(mode == .day ? "Тап по годині — справа до кінця години. Затисни годину й тягни вниз — кілька годин. Затисни кнопку вгорі — Тиждень, Місяць, Рік."
+                             : "♥ — вечір, коли ви обоє вільні: тап — запросити. Тап по дню — його години.")
                             .font(.system(size: 12.5)).foregroundStyle(Theme.muted)
                     }
                 }
@@ -207,6 +209,95 @@ struct CalendarPage: View {
         .background(d.date == today ? Color(hex: 0xF3E6D8) : Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.coffee, lineWidth: d.date == today ? 1.5 : 0))
         .grayscale(d.date < today ? 1 : 0).opacity(d.date < today ? 0.5 : 1)
+    }
+
+    // MARK: Сьогодні — the day card, then one row per hour (smaller than the week's day cards)
+
+    private let hourH: CGFloat = 46, hourGap: CGFloat = 6
+
+    private var hourList: some View {
+        let iso = Evening.iso(anchor)
+        let today = Evening.iso(Date())
+        let nowM = cal.component(.hour, from: Date()) * 60 + cal.component(.minute, from: Date())
+        let d = days.first { $0.date == iso }
+        return VStack(alignment: .leading, spacing: 10) {
+            if let d { stripRow(d, today: today) } else { ProgressView().tint(Theme.olive).frame(maxWidth: .infinity).padding(20) }
+            if let d {
+                ZStack(alignment: .topLeading) {
+                    VStack(spacing: hourGap) {
+                        ForEach(H0..<H1, id: \.self) { h in hourRow(h, d: d, today: today, nowM: nowM) }
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture(coordinateSpace: .local) { p in tapHour(p.y, day: iso) }
+                .gesture(LongPressGesture(minimumDuration: 0.3).sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                    .onChanged { v in if case .second(true, let drag) = v, let drag { dragHour(drag.location.y, day: iso) } }
+                    .onEnded { _ in if let s = sel { sel = nil; plan = PlanDraft(day: s.day, a: s.a * 60, b: s.b * 60) } })
+            }
+        }
+    }
+
+    private func hourRow(_ h: Int, d: DayPlan, today: String, nowM: Int) -> some View {
+        let s = h * 60, e = s + 60
+        let hit: (DayBlock) -> Bool = { Evening.minutes($0.start) < e && Evening.minutes($0.end) > s }
+        let mine = d.blocks.me.filter(hit), hers = d.blocks.partner.filter { $0.kind != "ours" && hit($0) }
+        let past = d.date < today || (d.date == today && e <= nowM)
+        let cur = d.date == today && s <= nowM && nowM < e
+        let picked = sel.map { $0.day == d.date && h >= $0.a && h < $0.b } ?? false
+        return HStack(spacing: 10) {
+            Text(String(format: "%02d:00", h)).font(.system(size: 13, weight: .bold)).monospacedDigit().foregroundStyle(Theme.muted).frame(width: 46, alignment: .leading)
+            if mine.isEmpty && hers.isEmpty {
+                Text("вільно").font(.system(size: 12)).foregroundStyle(Theme.muted.opacity(0.6))
+            } else {
+                HStack(spacing: 4) {
+                    ForEach(Array(mine.enumerated()), id: \.offset) { _, b in hourChip(b, who: b.kind == "ours" ? "♥" : String(state.me?.name.prefix(1) ?? "Я"), side: b.kind == "ours" ? 0 : -1) }
+                    ForEach(Array(hers.enumerated()), id: \.offset) { _, b in hourChip(b, who: String(state.partner?.name.prefix(1) ?? "?"), side: 1) }
+                }
+            }
+            Spacer(minLength: 0)
+            if let s0 = sel, picked, h == s0.a {
+                Text("\(String(format: "%02d", s0.a)):00–\(String(format: "%02d", s0.b)):00 · \(s0.b - s0.a) год").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.olive)
+            }
+        }
+        .padding(.horizontal, 12).frame(height: hourH)
+        .background(picked ? Theme.olive.opacity(0.18) : Theme.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(picked ? Theme.olive : Theme.coffee, lineWidth: picked ? 2 : (cur ? 1.5 : 0)))
+        .grayscale(past ? 1 : 0).opacity(past ? 0.45 : 1)
+    }
+
+    private func hourChip(_ b: DayBlock, who: String, side: Int) -> some View {
+        Text("\(who) · \(b.kind == "work" ? "робота" : b.label ?? "")").font(.system(size: 11.5, weight: .semibold)).lineLimit(1)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(fill(b.kind, side: side), in: Capsule())
+            .foregroundStyle(b.kind == "work" ? Theme.muted : Theme.cream)
+    }
+
+    private func hourAt(_ y: CGFloat) -> Int? {
+        let h = H0 + Int(max(0, y) / (hourH + hourGap))
+        return h >= H0 && h < H1 ? h : nil
+    }
+
+    private func tapHour(_ y: CGFloat, day d: String) {
+        guard let h = hourAt(y) else { return }
+        let today = Evening.iso(Date())
+        let nowM = cal.component(.hour, from: Date()) * 60 + cal.component(.minute, from: Date())
+        if d < today || (d == today && (h + 1) * 60 <= nowM) { return }
+        let a = d == today && h * 60 <= nowM && nowM < (h + 1) * 60 ? nowM : h * 60
+        plan = PlanDraft(day: d, a: a, b: (h + 1) * 60)
+    }
+
+    private func dragHour(_ y: CGFloat, day d: String) {
+        guard let h = hourAt(y) else { return }
+        if var s = sel {
+            let b = max(s.a + 1, h + 1)
+            if b != s.b { s.b = b; sel = s; UISelectionFeedbackGenerator().selectionChanged() }
+        } else {
+            let today = Evening.iso(Date())
+            let nowM = cal.component(.hour, from: Date()) * 60 + cal.component(.minute, from: Date())
+            if d < today || (d == today && (h + 1) * 60 <= nowM) { return }
+            sel = (d, h, h + 1)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
     }
 
     /// Сьогодні: the day's events and a quick plan with the olive timer.

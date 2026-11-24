@@ -98,6 +98,17 @@ struct HistoryFeed: View {
                 Spacer(minLength: 0)
             }
             .padding(12).background(Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        case "cancelled":
+            HStack(spacing: 12) {
+                Image(systemName: "xmark").foregroundStyle(Theme.muted).frame(width: 40, height: 40).background(Theme.tan.opacity(0.6), in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("СКАСОВАНЕ ПОБАЧЕННЯ").font(.system(size: 10.5, weight: .bold)).tracking(1).foregroundStyle(Theme.muted)
+                    Text(it.title).font(.system(size: 15, weight: .semibold)).strikethrough(color: Theme.muted)
+                    Text([dayText(it.at), it.note ?? it.place].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+                }
+                Spacer()
+            }
+            .padding(12).background(Theme.paper.opacity(0.6), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         default: // date
             HStack(spacing: 12) {
                 Image(systemName: "heart.fill").foregroundStyle(Theme.cream).frame(width: 40, height: 40).background(Theme.coffee, in: Circle())

@@ -289,102 +289,168 @@ struct DiscoverPage: View {
 
 // MARK: - Рулетка
 
-/// Random pick: from our «Хочемо», from chosen candidates, or by filters — with a ≥3 s reel.
+/// Random pick: from our list (search, pick some or spin over all), anything found on TMDB, or by filters.
+/// A strip of posters glides and slows down under the marker (~4.4 s); the one in the middle grows.
 struct RouletteSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
-    enum Source: String { case list, chosen, filters }
+    enum Source: String { case list, any, filters }
     struct Slot: Identifiable, Equatable { let id: String; let title: String; let poster: String?; let item: WatchItem?; let found: Found? }
     @State private var source: Source = .list
+    @State private var query = ""
     @State private var chosen: Set<String> = []
+    @State private var picks: [Found] = []
+    @State private var anyQuery = ""
+    @State private var anyResults: [Found] = []
     @State private var type = "movie"
     @State private var minRating = 7
-    @State private var pool: [Slot] = []
-    @State private var shown: Slot?
+    @State private var reel: [Slot] = []
+    @State private var offset: CGFloat = 0
     @State private var spinning = false
     @State private var result: Slot?
+    @State private var winIndex = 0
     @State private var error: String?
+    private let cardW: CGFloat = 104, gap: CGFloat = 12
+
+    private var ours: [WatchItem] {
+        let q = query.lowercased()
+        return store.watch.filter { $0.status != .done && (q.isEmpty || $0.title.lowercased().contains(q)) }
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Picker("", selection: $source) { Text("Наш список").tag(Source.list); Text("Обрати").tag(Source.chosen); Text("За фільтрами").tag(Source.filters) }
+                    Picker("", selection: $source) { Text("Наш список").tag(Source.list); Text("Будь-що").tag(Source.any); Text("За фільтрами").tag(Source.filters) }
                         .pickerStyle(.segmented).disabled(spinning)
-                    reel
+                    reelView
                     if let r = result, !spinning {
-                        HStack(spacing: 8) {
-                            Button { Task { await take(r) } } label: { Text("Беремо").frame(maxWidth: .infinity).frame(height: 48) }
-                                .background(Theme.ink, in: Capsule()).foregroundStyle(Theme.paper)
-                            Button { Task { await spin() } } label: { Text("Ще раз").frame(maxWidth: .infinity).frame(height: 48) }
-                                .background(Theme.tan, in: Capsule()).foregroundStyle(Theme.ink)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("СЬОГОДНІ ДИВИМОСЬ").font(.system(size: 11, weight: .heavy)).tracking(2).foregroundStyle(Theme.coffee)
+                            Text(r.title).font(.system(size: 22, weight: .bold))
+                            HStack(spacing: 8) {
+                                Button { Task { await take(r) } } label: { Text("Беремо").frame(maxWidth: .infinity).frame(height: 48) }
+                                    .background(Theme.ink, in: Capsule()).foregroundStyle(Theme.paper)
+                                Button { Task { await spin() } } label: { Text("Ще раз").frame(maxWidth: .infinity).frame(height: 48) }
+                                    .background(Theme.tan, in: Capsule()).foregroundStyle(Theme.ink)
+                            }
+                            .font(.system(size: 15, weight: .semibold))
                         }
-                        .font(.system(size: 15, weight: .semibold))
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     } else {
                         Button { Task { await spin() } } label: { Label("Крутити", systemImage: "dice.fill").frame(maxWidth: .infinity).frame(height: 50) }
                             .font(.system(size: 16, weight: .semibold)).background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream).disabled(spinning)
                     }
                     if let error { Text(error).font(.system(size: 13)).foregroundStyle(Theme.coffee) }
                     switch source {
-                    case .list: Text("Випадковий фільм із «Хочемо».").font(.system(size: 13)).foregroundStyle(Theme.muted)
-                    case .chosen: chooser
+                    case .list: listBox
+                    case .any: anyBox
                     case .filters: filterBox
                     }
                 }
                 .padding(18)
             }
+            .scrollDisabled(spinning)
             .background(Theme.cream.ignoresSafeArea())
             .foregroundStyle(Theme.ink)
             .navigationTitle("Рулетка").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрити") { dismiss() } } }
-            .onChange(of: source) { _, _ in result = nil; shown = nil }
+            .onChange(of: source) { _, _ in result = nil; reel = [] }
+            .onAppear { if reel.isEmpty { reel = Array(ours.prefix(7).map(slot)) } }
         }
         .tint(Theme.olive)
     }
 
-    private var reel: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Color(hex: 0x1C1A1A))
-            if let s = shown {
-                HStack(spacing: 14) {
-                    RemoteImage(url: s.poster).frame(width: 96, height: 140).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(result != nil && !spinning ? "ВИПАЛО" : "…").font(.system(size: 11, weight: .heavy)).tracking(2).foregroundStyle(Color(hex: 0xF2B640))
-                        Text(s.title).font(.system(size: 22, weight: .bold)).lineLimit(3).foregroundStyle(Color(hex: 0xF3EEE6))
+    // MARK: the reel
+
+    private var reelView: some View {
+        GeometryReader { g in
+            let mid = g.size.width / 2
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(hex: 0x1C1A1A))
+                HStack(spacing: gap) {
+                    ForEach(Array(reel.enumerated()), id: \.offset) { i, s in
+                        posterCard(s, winner: !spinning && result != nil && i == winIndex)
+                            .visualEffect { content, proxy in
+                                // the card under the marker grows, the others shrink and fade
+                                let d = abs(proxy.frame(in: .named("reel")).midX - mid)
+                                let k = max(0, 1 - d / 260)
+                                return content.scaleEffect(0.78 + 0.26 * k).opacity(0.35 + 0.65 * k)
+                            }
                     }
-                    Spacer(minLength: 0)
                 }
-                .padding(16)
-                .id(s.id)
-                .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .move(edge: .top).combined(with: .opacity)))
-            } else {
-                Text("Натисни «Крутити»").font(.system(size: 16, weight: .semibold)).foregroundStyle(Color(hex: 0xF3EEE6).opacity(0.6))
+                .offset(x: mid - cardW / 2 + offset)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color(hex: 0xF2B640), lineWidth: 2)
+                    .frame(width: cardW + 14, height: 176)
+                    .shadow(color: Color(hex: 0xF2B640).opacity(result != nil && !spinning ? 0.6 : 0), radius: 18)
+                    .position(x: mid, y: 100)
+                    .allowsHitTesting(false)
+                if reel.isEmpty {
+                    Text("Натисни «Крутити»").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white.opacity(0.6)).frame(maxWidth: .infinity)
+                }
             }
+            .coordinateSpace(.named("reel"))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
-        .frame(height: 172)
-        .clipped()
-        .scaleEffect(result != nil && !spinning ? 1.02 : 1)
+        .frame(height: 200)
     }
 
-    private var chooser: some View {
-        let want = store.watch.filter { $0.status == .want }
-        return VStack(alignment: .leading, spacing: 6) {
-            Text("Познач кандидатів (\(chosen.count))").font(.system(size: 14, weight: .semibold))
-            ForEach(want) { w in
+    private func posterCard(_ s: Slot, winner: Bool) -> some View {
+        Color(hex: 0x333030).frame(width: cardW, height: 156)
+            .overlay { RemoteImage(url: s.poster) }
+            .overlay(alignment: .bottomLeading) {
+                Text(s.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).lineLimit(2)
+                    .padding(6).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .shadow(color: .black.opacity(0.4), radius: 10, y: 6)
+            .scaleEffect(winner ? 1.06 : 1)
+    }
+
+    // MARK: sources
+
+    private var listBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundStyle(Theme.muted)
+                TextField("Пошук у нашому списку", text: $query)
+            }
+            .padding(.horizontal, 14).frame(height: 44).background(Theme.paper, in: Capsule())
+            Text(chosen.isEmpty ? "Тапни, щоб крутити лише серед обраних. Нічого не обрано — крутимо серед усіх (\(ours.count))." : "Крутимо серед обраних: \(chosen.count)")
+                .font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+            ForEach(ours) { w in
                 Button { if chosen.contains(w.id) { chosen.remove(w.id) } else { chosen.insert(w.id) } } label: {
-                    HStack {
-                        Image(systemName: chosen.contains(w.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(chosen.contains(w.id) ? Theme.olive : Theme.muted)
-                        Text(w.title).font(.system(size: 15))
-                        Spacer()
-                        Text(w.kindLabel).font(.system(size: 12)).foregroundStyle(Theme.muted)
-                    }
-                    .padding(.vertical, 8)
+                    row(w.posterUrl ?? w.backdropUrl, w.title, w.kindLabel + (w.status == .watching ? " · дивимось" : ""), on: chosen.contains(w.id))
                 }
                 .buttonStyle(.plain)
             }
-            if want.isEmpty { Text("У «Хочемо» поки пусто.").foregroundStyle(Theme.muted) }
         }
-        .padding(14).background(Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var anyBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundStyle(Theme.muted)
+                TextField("Знайди будь-який фільм чи серіал", text: $anyQuery).submitLabel(.search).onSubmit { Task { await find() } }
+            }
+            .padding(.horizontal, 14).frame(height: 44).background(Theme.paper, in: Capsule())
+            ForEach(anyResults.prefix(8)) { f in
+                Button { if !picks.contains(where: { $0.id == f.id }) { picks.append(f) } } label: {
+                    row(f.posterUrl, f.title, [f.year.map(String.init), "+ додати"].compactMap { $0 }.joined(separator: " · "), on: picks.contains { $0.id == f.id })
+                }
+                .buttonStyle(.plain)
+            }
+            if !picks.isEmpty {
+                Text("Кандидати (\(picks.count)) · тап — прибрати").font(.system(size: 13, weight: .semibold)).padding(.top, 6)
+                ForEach(picks) { f in
+                    Button { picks.removeAll { $0.id == f.id } } label: { row(f.posterUrl, f.title, f.year.map(String.init) ?? "", on: true) }.buttonStyle(.plain)
+                }
+            } else {
+                Text("Додай хоча б двох кандидатів.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+            }
+        }
     }
 
     private var filterBox: some View {
@@ -396,38 +462,69 @@ struct RouletteSheet: View {
         .padding(14).background(Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
-    private func buildPool() async throws -> [Slot] {
+    private func row(_ poster: String?, _ title: String, _ sub: String, on: Bool) -> some View {
+        HStack(spacing: 10) {
+            RemoteImage(url: poster).frame(width: 40, height: 56).clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 14.5, weight: .semibold)).lineLimit(1)
+                Text(sub).font(.system(size: 11.5)).foregroundStyle(Theme.muted)
+            }
+            Spacer()
+            Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.system(size: 20)).foregroundStyle(on ? Theme.olive : Theme.ink.opacity(0.15))
+        }
+        .padding(6).background(on ? Theme.olive.opacity(0.12) : Theme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func slot(_ w: WatchItem) -> Slot { Slot(id: w.id, title: w.title, poster: w.posterUrl ?? w.backdropUrl, item: w, found: nil) }
+    private func slot(_ f: Found) -> Slot { Slot(id: f.id, title: f.title, poster: f.posterUrl, item: nil, found: f) }
+
+    private func find() async {
+        let q = anyQuery.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return }
+        anyResults = ((try? await API.current().search(q)) ?? []).map { Found(tmdbId: $0.tmdbId, mediaType: $0.mediaType, title: $0.title, originalTitle: $0.originalTitle, year: $0.year, posterPath: $0.posterPath, posterUrl: $0.posterUrl, isAnime: $0.isAnime) }
+    }
+
+    private func pool() async throws -> [Slot] {
         switch source {
         case .list:
-            return store.watch.filter { $0.status == .want }.map { Slot(id: $0.id, title: $0.title, poster: $0.posterUrl ?? $0.backdropUrl, item: $0, found: nil) }
-        case .chosen:
-            return store.watch.filter { chosen.contains($0.id) }.map { Slot(id: $0.id, title: $0.title, poster: $0.posterUrl ?? $0.backdropUrl, item: $0, found: nil) }
+            let c = ours.filter { chosen.contains($0.id) }
+            return (c.isEmpty ? ours : c).map(slot)
+        case .any:
+            return picks.map(slot)
         case .filters:
-            let page = Int.random(in: 1...3)
-            let list = try await API.current().discover(type: type, genre: nil, from: nil, to: nil, minRating: minRating, sort: "popular", page: page)
-            return list.filter { $0.inList != true }.map { Slot(id: $0.id, title: $0.title, poster: $0.posterUrl, item: nil, found: $0) }
+            let list = try await API.current().discover(type: type, genre: nil, from: nil, to: nil, minRating: minRating, sort: "popular", page: Int.random(in: 1...3))
+            return list.filter { $0.inList != true }.map(slot)
         }
     }
 
     private func spin() async {
         error = nil
-        do { pool = try await buildPool() } catch { self.error = error.localizedDescription; return }
-        guard pool.count > 0 else {
-            error = source == .chosen ? "Познач хоча б двох кандидатів." : source == .list ? "У «Хочемо» поки пусто." : "Нічого не знайшлось — зменш рейтинг."
+        let p: [Slot]
+        do { p = try await pool() } catch { self.error = error.localizedDescription; return }
+        guard p.count >= 2 else {
+            error = source == .any ? "Додай хоча б двох кандидатів." : source == .list ? "У списку замало фільмів." : "Нічого не знайшлось — зменш рейтинг."
             return
         }
-        let winner = pool.randomElement()!
-        result = nil; spinning = true
-        // ~3.6 s: fast at first, then slowing down
-        var t = 0.0, step = 0.06, i = Int.random(in: 0..<pool.count)
-        while t < 3.6 {
-            i = (i + 1) % pool.count
-            withAnimation(.easeOut(duration: min(step, 0.25))) { shown = pool.count == 1 ? pool[0] : pool[i] }
-            UISelectionFeedbackGenerator().selectionChanged()
-            try? await Task.sleep(for: .seconds(step))
-            t += step; step *= 1.11
+        let winner = p.randomElement()!
+        let n = 34
+        var seq = (0..<n).map { _ in p.randomElement()! }
+        seq.append(winner)
+        seq += (0..<3).map { _ in p.randomElement()! }
+        withAnimation(.easeOut(duration: 0.2)) { result = nil }
+        spinning = true
+        reel = seq
+        winIndex = n
+        offset = 0
+        let target = -CGFloat(n) * (cardW + gap)
+        // haptic ticks: fast at first, slower as the strip slows down
+        Task { @MainActor in
+            var t = 0.0, step = 0.05
+            while t < 4.2 { UISelectionFeedbackGenerator().selectionChanged(); try? await Task.sleep(for: .seconds(step)); t += step; step *= 1.09 }
         }
-        withAnimation(.spring(duration: 0.45, bounce: 0.35)) { shown = winner; result = winner; spinning = false }
+        try? await Task.sleep(for: .milliseconds(60))
+        withAnimation(.timingCurve(0.08, 0.82, 0.17, 1, duration: 4.4)) { offset = target }
+        try? await Task.sleep(for: .seconds(4.45))
+        withAnimation(.spring(duration: 0.45, bounce: 0.3)) { result = winner; spinning = false }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 

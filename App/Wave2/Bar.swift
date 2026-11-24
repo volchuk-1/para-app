@@ -75,12 +75,23 @@ struct WaveBar: View {
     private func labelWidth(_ t: String) -> CGFloat {
         max(38, (t as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 10, weight: .semibold)]).width + 10)
     }
+    private var room: CGFloat {
+        guard let s = current else { return 0 }
+        let others = CGFloat(sections.count - 1), n = CGFloat(s.subs.count)
+        return width - 14 - 44 - others * small - (others + n) * 4
+    }
+    /// Too many subs for their labels (Разом has 7): icons only, the open page keeps its label.
+    private var compact: Bool {
+        guard let s = current else { return false }
+        return s.subs.map { labelWidth($0.label) }.reduce(0, +) > room * 1.08
+    }
     private func subWidth(_ x: BarSub) -> CGFloat {
         guard open, let s = current, !s.subs.isEmpty else { return 0 }
-        let others = CGFloat(sections.count - 1), n = CGFloat(s.subs.count)
-        let room = width - 14 - 44 - others * small - (others + n) * 4
-        let total = s.subs.map { labelWidth($0.label) }.reduce(0, +)
-        return (labelWidth(x.label) * min(1, room / max(1, total))).rounded(.down)
+        guard compact else { return labelWidth(x.label).rounded(.down) }
+        let cur = s.subs.first { $0.page != nil && $0.page == page }
+        let curW = cur.map { min(labelWidth($0.label), room * 0.3) } ?? 0
+        if x.id == cur?.id { return curW.rounded(.down) }
+        return ((room - curW) / CGFloat(max(1, s.subs.count - (cur == nil ? 0 : 1)))).rounded(.down)
     }
 
     private var row: some View {
@@ -125,7 +136,7 @@ struct WaveBar: View {
         let on = x.page != nil && x.page == page
         return VStack(spacing: 2) {
             Image(systemName: x.icon).font(.system(size: 18, weight: .semibold)).scaleEffect(on ? 1.08 : 1)
-            Text(x.label).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
+            if !compact || on { Text(x.label).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75) }
         }
         .frame(width: subWidth(x), height: 46)
         .background(on ? Theme.olive.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 17, style: .continuous))

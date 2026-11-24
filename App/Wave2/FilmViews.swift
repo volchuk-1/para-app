@@ -95,14 +95,35 @@ struct FilmPage: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
+            // reference «N99»: the poster fills the screen and stays; the title sits on it; the rest is a floating card
+            Color.black.ignoresSafeArea()
+                .overlay { RemoteImage(url: item.posterUrl ?? item.backdropUrl) }
+                .overlay { LinearGradient(colors: [.black.opacity(0.35), .clear, .black.opacity(0.25), .black.opacity(0.75)], startPoint: .top, endPoint: .bottom) }
+                .clipped()
+                .ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    gallery
+                    VStack(spacing: 8) {
+                        Text([item.kindLabel, item.year.map(String.init)].compactMap { $0 }.joined(separator: " · ").uppercased())
+                            .font(.system(size: 12, weight: .medium)).tracking(2.2)
+                        Text(item.title).font(.system(size: 44, weight: .light)).tracking(-0.8).multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.6)
+                        if let g = item.genres, !g.isEmpty { Text(g.prefix(2).joined(separator: " · ").uppercased()).font(.system(size: 12)).tracking(1.8).opacity(0.85) }
+                    }
+                    .foregroundStyle(.white).shadow(color: .black.opacity(0.35), radius: 14)
+                    .padding(.horizontal, 24).padding(.bottom, 30)
+                    .frame(maxWidth: .infinity, minHeight: 470, alignment: .bottom)
                     VStack(alignment: .leading, spacing: 14) {
-                        Text(item.title).font(.system(size: 24, weight: .bold))
+                        HStack(spacing: 12) {
+                            Color.clear.frame(width: 68, height: 68)
+                                .overlay { RemoteImage(url: item.backdropUrl ?? item.posterUrl) }
+                                .clipShape(Circle()).overlay(Circle().stroke(.white, lineWidth: 3))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.status.label).font(.system(size: 11, weight: .semibold)).padding(.horizontal, 10).padding(.vertical, 3)
+                                    .background(Theme.ink.opacity(0.08), in: Capsule()).foregroundStyle(Theme.muted)
+                                Text(item.title).font(.system(size: 22, weight: .bold)).lineLimit(2)
+                            }
+                        }
                         rates
-                        Text([item.kindLabel, item.year.map(String.init)].compactMap { $0 }.joined(separator: " · ") + ((item.genres ?? []).isEmpty ? "" : " · " + (item.genres ?? []).prefix(2).joined(separator: ", ")))
-                            .font(.system(size: 13)).foregroundStyle(Theme.muted)
                         Picker("Статус", selection: Binding(get: { item.status }, set: { s in Task { await patch { try await API.current().patchWatch(item.id, .init(status: s.rawValue)) } } })) {
                             ForEach(WatchStatus.allCases) { Text($0.label).tag($0) }
                         }
@@ -126,15 +147,21 @@ struct FilmPage: View {
                         }
                         Button("Видалити зі списку", role: .destructive) { confirmDelete = true }
                     }
-                    .padding(.horizontal, 22).padding(.top, 24).padding(.bottom, 130)
-                    .background(Theme.paper, in: UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30, style: .continuous))
-                    .padding(.top, -34)
+                    .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 130)
+                    .background(Theme.paper.opacity(0.97), in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+                    .shadow(color: .black.opacity(0.25), radius: 20, y: -8)
+                    .padding(.horizontal, 10)
                 }
             }
-            .ignoresSafeArea(edges: .top)
+            .overlay(alignment: .topLeading) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .bold)).frame(width: 42, height: 42)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .foregroundStyle(.white).padding(.leading, 16).padding(.top, 4)
+            }
             bottomBar
         }
-        .background(Theme.paper.ignoresSafeArea())
         .foregroundStyle(Theme.ink)
         .onAppear { review = item.reviews?[state.me?.id ?? ""] ?? "" }
         .fullScreenCover(isPresented: $invite) { InviteBooking(start: .film(item.id)) }

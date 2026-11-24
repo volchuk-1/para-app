@@ -10,6 +10,7 @@ struct FeedFilm: Codable, Hashable, Identifiable {
     let movieUrl: String?
     let watchId: String?
     let sessions: [FeedSession]
+    var fav: Bool? = nil
     var id: String { title }
 }
 struct SoonFilm: Codable, Hashable, Identifiable {
@@ -21,13 +22,23 @@ struct SoonFilm: Codable, Hashable, Identifiable {
     let onSale: Bool
     var date: String? = nil
     var remind: Bool? = nil
+    var fav: Bool? = nil
     var id: String { title + when }
 }
 struct CinemaFeed: Codable { let cinema: String; let now: [FeedFilm]; let soon: [SoonFilm] }
 
 extension API {
     func cinemaFeed() async throws -> CinemaFeed { try await get("/cinema/feed") }
+    struct FavBody: Encodable { let title: String; let movieUrl: String?; let poster: String? }
+    func fav(title: String, movieUrl: String?, poster: String?) async throws { let _: OkResult = try await send("POST", "/cinema/fav", FavBody(title: title, movieUrl: movieUrl, poster: poster)) }
+    func unfav(title: String) async throws {
+        let e = title.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? title
+        let _: OkResult = try await send("DELETE", "/cinema/fav?title=\(e)", Empty())
+    }
 }
+
+/// A session picked on the Multiplex page: the sheet is built from it, so it can never open empty.
+struct BookPick: Identifiable { let film: FeedFilm; let session: FeedSession; var id: String { session.buyUrl } }
 
 // MARK: - Разом → Вечір
 
@@ -263,8 +274,8 @@ struct CinemaPage: View {
     @State private var avail: [DayPlan] = []
     @State private var tab = "now"
     @State private var day = Evening.iso(Date())
-    @State private var book: (FeedFilm, FeedSession)?
-    @State private var showBook = false
+    @State private var book: BookPick?
+    @State private var favs: [String: Bool] = [:]
     @State private var error: String?
     @State private var reminded: Set<String> = []
     @State private var unreminded: Set<String> = []
@@ -293,7 +304,8 @@ struct CinemaPage: View {
         .foregroundStyle(.white)
         .task { await load() }
         .refreshable { await load() }
-        .sheet(isPresented: $showBook) { if let b = book { CinemaInviteSheet(film: b.0, session: b.1, plan: avail.first { $0.date == b.1.date }) } }
+        .sheet(item: $book) { b in CinemaInviteSheet(film: b.film, session: b.session, plan: avail.first { $0.date == b.session.date }) }
+        .overlay(alignment: .top) { bg.frame(height: 0).background(bg.ignoresSafeArea(edges: .top)) }
     }
 
     private func tabButton(_ k: String, _ l: String) -> some View {
@@ -343,12 +355,16 @@ struct CinemaPage: View {
                         }
                     }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(film.title).font(.system(size: 15.5, weight: .bold)).fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .top) {
+                        Text(film.title).font(.system(size: 15.5, weight: .bold)).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 6)
+                        heart(film.title, on: favs[film.title] ?? (film.fav == true)) { await toggleFav(film.title, film.movieUrl, film.poster, on: favs[film.title] ?? (film.fav == true)) }
+                    }
                     Text([film.age, sessions.isEmpty ? film.sessions.first.map { "з \(MoneyText.date($0.date).split(separator: " ").prefix(2).joined(separator: " "))" } : nil].compactMap { $0 }.joined(separator: " · "))
                         .font(.system(size: 12)).opacity(0.55)
                     FlowRow(items: sessions.map { SessionChip(s: $0) }) { c in
                         let good = (plan?.bothFree ?? false) && c.s.time >= (plan?.freeFrom ?? "99")
-                        Button { book = (film, c.s); showBook = true } label: {
+                        Button { book = BookPick(film: film, session: c.s) } label: {
                             HStack(spacing: 4) {
                                 Text(c.s.time).font(.system(size: 14, weight: .semibold))
                                 if !c.s.tags.isEmpty { Text(c.s.tags.joined(separator: " ")).font(.system(size: 10, weight: .bold)).foregroundStyle(accent) }
@@ -362,7 +378,9 @@ struct CinemaPage: View {
                     }
                     .padding(.top, 4)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 14)
         }
     }
@@ -377,7 +395,12 @@ struct CinemaPage: View {
                         .overlay(alignment: .bottomLeading) {
                             if s.onSale { Text("Квитки у продажу").font(.system(size: 10.5, weight: .bold)).padding(.horizontal, 7).padding(.vertical, 3).background(accent, in: RoundedRectangle(cornerRadius: 7)).foregroundStyle(bg).padding(8) }
                         }
-                    Text(s.when).font(.system(size: 12, weight: .bold)).foregroundStyle(accent).padding(.top, 4)
+                    HStack {
+                        Text(s.when).font(.system(size: 12, weight: .bold)).foregroundStyle(accent)
+                        Spacer()
+                        heart(s.title, on: favs[s.title] ?? (s.fav == true)) { await toggleFav(s.title, s.movieUrl, s.poster, on: favs[s.title] ?? (s.fav == true)) }
+                    }
+                    .padding(.top, 4)
                     Text(s.title).font(.system(size: 14, weight: .semibold)).lineLimit(2)
                     HStack(spacing: 6) {
                         if let d = s.date {
@@ -395,6 +418,22 @@ struct CinemaPage: View {
                 }
             }
         }
+    }
+
+    private func heart(_ title: String, on: Bool, _ action: @escaping () async -> Void) -> some View {
+        Button { Task { await action() } } label: {
+            Image(systemName: on ? "heart.fill" : "heart").font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(on ? Color(hex: 0xE0715A) : .white.opacity(0.6)).frame(width: 34, height: 34)
+                .background(card, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(on ? "Прибрати з обраного" : "В обране")
+    }
+
+    private func toggleFav(_ title: String, _ url: String?, _ poster: String?, on: Bool) async {
+        favs[title] = !on
+        do { if on { try await API.current().unfav(title: title) } else { try await API.current().fav(title: title, movieUrl: url, poster: poster) } }
+        catch { favs[title] = on; self.error = error.localizedDescription }
     }
 
     private func toggleRemind(_ s: SoonFilm, _ date: String, _ on: Bool) async {

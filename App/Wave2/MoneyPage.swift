@@ -17,7 +17,7 @@ struct MoneyPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                PageTitle(plain: "Мої", italic: "гроші", sub: "Бачиш лише ти" + (data.map { " · віджет — \(ago($0.updatedAt))" } ?? ""))
+                PageTitle(plain: "Мої", italic: "гроші", sub: data.map { "Віджет — \(ago($0.updatedAt))" })
                 if let error { Text(error).font(.system(size: 14)).foregroundStyle(Theme.coffee) }
                 if let d = data {
                     if !d.connected {

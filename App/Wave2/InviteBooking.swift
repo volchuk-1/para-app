@@ -11,7 +11,8 @@ struct InviteBooking: View {
     let start: Start
 
     @State private var pick = ""          // cinema | dinner | walk | own
-    @State private var filmId: String?    // cinema: the film from «Хочемо», picked inside the card
+    @State private var filmId: String?    // cinema: a film now at Multiplex (♥ first), picked inside the card
+    @State private var feed: CinemaFeed?
     @State private var day = ""
     @State private var avail: [DayPlan] = []
     @State private var sessions: [String: [CinemaSession]] = [:]
@@ -24,14 +25,31 @@ struct InviteBooking: View {
 
     private let acts: [(String, String, String)] = [("cinema", "film.fill", "Кіно"), ("dinner", "fork.knife", "Вечеря"), ("walk", "tree.fill", "Прогулянка"), ("own", "sparkles", "Своє")]
     private var cal: Calendar { Dock.calendar }
-    private var movies: [WatchItem] {
-        var m = store.watch.filter { $0.mediaType == "movie" && $0.status != .done && $0.status != .dropped }
-        if case .film(let id) = start, !m.contains(where: { $0.id == id }), let w = store.watch.first(where: { $0.id == id }) { m.insert(w, at: 0) }
-        return Array(m.prefix(6))
+    /// What is on at Multiplex now (sessions still ahead), our ♥ first, then films from our list; a film opened
+    /// from «Дивимось» that is not on comes too, without sessions.
+    private var movies: [PickFilm] {
+        let today = Evening.iso(Date())
+        let soon = Dock.calendar.date(byAdding: .minute, value: 10, to: Date()) ?? Date()
+        let nowHM = String(format: "%02d:%02d", Dock.calendar.component(.hour, from: soon), Dock.calendar.component(.minute, from: soon))
+        var list: [PickFilm] = (feed?.now ?? []).compactMap { f in
+            let s = f.sessions.filter { $0.date > today || ($0.date == today && $0.time >= nowHM) }
+                .map { CinemaSession(title: f.title, date: $0.date, time: $0.time, tags: $0.tags, buyUrl: $0.buyUrl) }
+            guard !s.isEmpty else { return nil }
+            return PickFilm(id: "mx:" + f.title, title: f.title, poster: f.poster, watchId: f.watchId, fav: f.fav == true, sessions: s)
+        }
+        list.sort { a, b in
+            if a.fav != b.fav { return a.fav }
+            if (a.watchId != nil) != (b.watchId != nil) { return a.watchId != nil }
+            return (a.sessions.first.map { $0.date + $0.time } ?? "") < (b.sessions.first.map { $0.date + $0.time } ?? "")
+        }
+        if case .film(let id) = start, !list.contains(where: { $0.watchId == id }), let w = store.watch.first(where: { $0.id == id }) {
+            list.insert(PickFilm(id: w.id, title: w.title, poster: w.posterUrl ?? w.backdropUrl, watchId: w.id, fav: false, sessions: []), at: 0)
+        }
+        return list
     }
-    private var film: WatchItem? { pick == "cinema" ? filmId.flatMap { id in store.watch.first { $0.id == id } } : nil }
+    private var film: PickFilm? { pick == "cinema" ? filmId.flatMap { id in movies.first { $0.id == id } } : nil }
     private var act: (String, String, String) { acts.first { $0.0 == pick } ?? acts[3] }
-    private var filmSessions: [CinemaSession]? { film.flatMap { sessions[$0.id] } }
+    private var filmSessions: [CinemaSession]? { film.flatMap { f in f.id.hasPrefix("mx:") ? f.sessions : sessions[f.id] } }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -124,9 +142,9 @@ struct InviteBooking: View {
                 .padding(.horizontal, -18)
                 .onChange(of: day) { _, d in withAnimation { proxy.scrollTo(d, anchor: .leading) } }
             }
-            if let f = film {
+            if film != nil {
                 Label("Сеанс у Multiplex «Паннонія»", systemImage: "film").font(.system(size: 14, weight: .medium)).foregroundStyle(Color(hex: 0x6F695E))
-                if let all = sessions[f.id] {
+                if let all = filmSessions {
                     let today = all.filter { $0.date == day }
                     if today.isEmpty {
                         Text(all.isEmpty ? "Цього фільму зараз нема в афіші Паннонії — обери день і час самі." : "Цього дня сеансів нема")
@@ -134,9 +152,12 @@ struct InviteBooking: View {
                         if all.isEmpty { stepper }
                     } else {
                         FlowRow(items: today) { s in
+                            let plan = avail.first { $0.date == day }
+                            let good = (plan?.bothFree ?? false) && s.time >= (plan?.freeFrom ?? "99")
                             Button { time = s.time } label: {
                                 HStack(spacing: 5) {
                                     Text(s.time).font(.system(size: 16, weight: .medium))
+                                    if good { Image(systemName: "heart.fill").font(.system(size: 10)).foregroundStyle(Theme.olive) }
                                     if !s.tags.isEmpty { Text(s.tags.joined(separator: " ")).font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.coffee) }
                                 }
                                 .padding(.horizontal, 15).frame(height: 44)
@@ -179,7 +200,7 @@ struct InviteBooking: View {
         .foregroundStyle(Theme.ink)
     }
 
-    /// Films from «Хочемо»: tap one to see its sessions, tap it again to go without a film.
+    /// Films on at Multiplex (♥ — ours first): tap one to see its sessions, tap it again to go without a film.
     private var filmPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -188,7 +209,7 @@ struct InviteBooking: View {
                 Text(film == nil ? "можна й без" : "ще раз — зняти").font(.system(size: 12.5)).foregroundStyle(Theme.muted)
             }
             if movies.isEmpty {
-                Text("У «Хочемо» нема фільмів — обери день і час, фільм вирішите там.").font(.system(size: 14)).foregroundStyle(Theme.muted)
+                Text(feed == nil ? "Дивлюсь афішу Multiplex…" : "В афіші зараз нічого — обери день і час, фільм вирішите там.").font(.system(size: 14)).foregroundStyle(Theme.muted)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
@@ -201,7 +222,7 @@ struct InviteBooking: View {
         }
     }
 
-    private func filmTile(_ m: WatchItem) -> some View {
+    private func filmTile(_ m: PickFilm) -> some View {
         let on = filmId == m.id
         return Button {
             withAnimation(.snappy) { filmId = on ? nil : m.id; time = nil; day = "" }
@@ -209,8 +230,11 @@ struct InviteBooking: View {
         } label: {
             VStack(spacing: 6) {
                 Color.clear.frame(width: 64, height: 92)
-                    .overlay { RemoteImage(url: m.posterUrl ?? m.backdropUrl) }
+                    .overlay { RemoteImage(url: m.poster) }
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
+                        if m.fav { Image(systemName: "heart.fill").font(.system(size: 11)).foregroundStyle(.white).padding(5).background(Theme.coffee, in: Circle()).padding(4) }
+                    }
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.ink, lineWidth: on ? 2 : 0))
                 Text(m.title).font(.system(size: 11.5, weight: .semibold)).lineLimit(2).multilineTextAlignment(.center)
                     .frame(width: 74, height: 30, alignment: .top)
@@ -237,7 +261,7 @@ struct InviteBooking: View {
         let date = Evening.date(d) ?? Date()
         let plan = avail.first { $0.date == d }
         let off: Bool = {
-            guard let f = film, let s = sessions[f.id], !s.isEmpty else { return false }
+            guard film != nil, let s = filmSessions, !s.isEmpty else { return false }
             return !s.contains { $0.date == d }
         }()
         return Button { day = d; time = nil } label: {
@@ -264,14 +288,17 @@ struct InviteBooking: View {
         }
         let today = Evening.iso(Date())
         let end = Evening.iso(cal.date(byAdding: .day, value: 34, to: Date()) ?? Date())
+        async let fd = API.current().cinemaFeed()
         avail = (try? await API.current().availability(from: today, to: end)) ?? []
+        feed = try? await fd
+        if case .film(let id) = start, let f = movies.first(where: { $0.watchId == id }) { filmId = f.id }
         await afterPick()
     }
 
     private func afterPick() async {
         if let f = film {
-            if sessions[f.id] == nil { sessions[f.id] = (try? await API.current().sessions(watchId: f.id)) ?? [] }
-            if day.isEmpty { day = sessions[f.id]?.first?.date ?? Evening.iso(Date()) }
+            if !f.id.hasPrefix("mx:"), sessions[f.id] == nil, let w = f.watchId { sessions[f.id] = (try? await API.current().sessions(watchId: w)) ?? [] }
+            if day.isEmpty { day = filmSessions?.first?.date ?? Evening.iso(Date()) }
         } else if day.isEmpty {
             day = avail.first { $0.isFree }?.date ?? Evening.iso(Date())
         }
@@ -280,8 +307,8 @@ struct InviteBooking: View {
     private func send() async {
         busy = true; defer { busy = false }
         let f = film
-        let session = f.flatMap { sessions[$0.id]?.first { $0.date == day && $0.time == time } }
-        if let f, let all = sessions[f.id], !all.isEmpty, session == nil { error = "Обери сеанс"; return }
+        let session = filmSessions?.first { $0.date == day && $0.time == time }
+        if f != nil, let all = filmSessions, !all.isEmpty, session == nil { error = "Обери сеанс"; return }
         let t = session?.time ?? String(format: "%02d:%02d", arrival / 60, arrival % 60)
         let hm = t.split(separator: ":").compactMap { Int($0) }
         guard let base = Evening.date(day), hm.count == 2,
@@ -290,12 +317,15 @@ struct InviteBooking: View {
         if title.isEmpty { error = "Напиши, що робимо"; return }
         var d = EventDraft(ownerId: nil, title: title, startsAt: startsAt, endsAt: nil, place: pick == "cinema" ? "Multiplex «Паннонія»" : (place.isEmpty ? nil : place),
                            mapUrl: nil, note: nil, dress: nil, message: nil)
-        d.watchId = f?.id
+        d.watchId = f?.watchId
         d.buyUrl = session?.buyUrl
         let ok = await store.run { let e = try await API.current().createInvitation(d); store.upsert(e) }
         if ok { dismiss() } else { error = store.error }
     }
 }
+
+/// A film to pick for a cinema date: from the Multiplex afisha (id «mx:<title>») or from our list.
+struct PickFilm: Identifiable, Hashable { let id: String; let title: String; let poster: String?; let watchId: String?; let fav: Bool; let sessions: [CinemaSession] }
 
 /// Wrapping row of buttons (session times).
 struct FlowRow<Item: Identifiable, Content: View>: View {

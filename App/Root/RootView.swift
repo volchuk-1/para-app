@@ -55,7 +55,7 @@ struct MainView: View {
     /// HomeView still talks in old tabs; map them onto pages.
     private var legacyTab: Binding<Tab> {
         Binding(get: {
-            switch page { case .week, .month, .invites, .cal, .cinema: return .calendar; case .watch, .books: return .together; case .wishes: return .us; default: return .home }
+            switch page { case .week, .month, .invites, .cal: return .calendar; case .watch, .books, .cinema, .archive: return .together; case .wishes: return .us; default: return .home }
         }, set: { t in
             switch t { case .home: page = .home; case .calendar: page = .cal; case .together: page = .watch; case .us: page = .wishes }
         })
@@ -66,15 +66,16 @@ struct MainView: View {
             BarSection(id: "me", icon: nil, avatar: String(state.me?.name.prefix(1) ?? "Я"), label: state.me?.name ?? "Я", note: "", start: .home,
                        subs: [BarSub(id: "home", icon: "house.fill", label: "Головна", page: .home)]
                        + (moneyOn ? [BarSub(id: "money", icon: "wallet.pass.fill", label: "Гроші", page: .money)] : [])
-                       + [BarSub(id: "archive", icon: "photo.on.rectangle", label: "Історія", page: .archive),
-                          BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil)]),
+                       + [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil)]),
             BarSection(id: "calendar", icon: "calendar", avatar: nil, label: "Календар", note: "", start: .cal,
                        subs: [BarSub(id: "cal", icon: "calendar", label: "Календар", page: .cal),
-                              BarSub(id: "cinema", icon: "film.fill", label: "Кіно", page: .cinema), BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites)]),
+                              BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites)]),
             BarSection(id: "together", icon: "heart.fill", avatar: nil, label: "Разом", note: "", start: .evening,
                        subs: [BarSub(id: "evening", icon: "moon.stars.fill", label: "Вечір", page: .evening), BarSub(id: "watch", icon: "popcorn.fill", label: "Дивимось", page: .watch),
+                              BarSub(id: "cinema", icon: "film.fill", label: "Кіно", page: .cinema),
                               BarSub(id: "books", icon: "books.vertical.fill", label: "Книжки", page: .books), BarSub(id: "wishes", icon: "gift.fill", label: "Бажання", page: .wishes),
-                              BarSub(id: "finance", icon: "banknote.fill", label: "Банки", page: .finance)]),
+                              BarSub(id: "finance", icon: "banknote.fill", label: "Банки", page: .finance),
+                              BarSub(id: "archive", icon: "photo.on.rectangle", label: "Історія", page: .archive)]),
         ]
     }
 
