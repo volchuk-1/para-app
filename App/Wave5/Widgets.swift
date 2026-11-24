@@ -21,7 +21,7 @@ extension Color {
 enum WidgetKind {
     /// kind, name, SF symbol — in the order of the settings list
     static let all: [(String, String, String)] = [
-        ("card", "Натхнення", "sparkles"),
+        ("card", "Натхнення", "sparkles"), ("tasks", "Справи", "checklist"),
         ("event", "Подія", "calendar"), ("evening", "Вечір", "moon.stars"), ("film", "Фільм", "film"),
         ("turn", "Чия черга обирати фільм", "arrow.left.arrow.right"), ("pomodoro", "Помодоро", "timer"),
         ("note", "Записка", "note.text"), ("coin", "Монетка", "circle.circle"),
@@ -42,6 +42,7 @@ enum WidgetKind {
         case "touch": return (Theme.paper, Theme.ink)
         case "spotify": return (Color(hex: 0x1F1F1F), .white)
         case "card": return (Color(hex: 0x2F3A24), Theme.cream)
+        case "tasks": return (Theme.paper, Theme.ink)
         default: return (Color(hex: 0x555555), .white)
         }
     }
@@ -305,6 +306,7 @@ struct WidgetCube: View {
         case "coin": return "Монетка"
         case "card": return (d.card?.tag ?? "Натхнення") + (d.card?.youtube != nil ? " · ▶ відео" : "")
         case "memory": return d.photo?.yearAgo == true ? "Рік тому" : "Спогад"
+        case "tasks": return d.tasks.map { $0.total > 0 ? "Справи · \($0.done) з \($0.total)" : "Справи" } ?? "Справи"
         default: return f
         }
     }
@@ -339,6 +341,17 @@ struct WidgetCube: View {
             }
         case "memory":
             head(d.photo?.title ?? "Додай перше фото", 16)
+        case "tasks":
+            if let t = d.tasks, t.total > 0 {
+                head(t.next?.title ?? "Усе зроблено ✓", 16)
+                GeometryReader { g in
+                    Capsule().fill(Color(hex: 0xE6E1D5)).overlay(alignment: .leading) { Capsule().fill(ac).frame(width: g.size.width * CGFloat(t.done) / CGFloat(max(1, t.total))) }
+                }
+                .frame(height: 6)
+            } else {
+                head("На сьогодні вільно", 15)
+                sub("тап — додати справу")
+            }
         default:
             EmptyView()
         }

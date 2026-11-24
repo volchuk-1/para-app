@@ -32,6 +32,7 @@ struct Dashboard: Codable, Hashable {
     var layout: [DashWidget]? = nil
     var watching: [DashFilm]? = nil
     var card: DashCard? = nil
+    var tasks: DashTasks? = nil
 }
 struct WidgetPrefs: Codable { let faces: [String]; var all: [String]? = nil }
 struct StatsMonth: Codable, Hashable { let month: String; let dates: Int; let films: Int; let touches: Int }

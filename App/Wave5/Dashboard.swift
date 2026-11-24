@@ -408,6 +408,7 @@ struct DashboardPage: View {
         switch f {
         case "event": invite = true
         case "pomodoro": page = .pomo
+        case "tasks": page = .tasks
         case "note": sheet = .note
         case "mood": sheet = .mood
         case "coin": sheet = .coin

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Every screen the bar can open.
 enum Page: String, Hashable {
-    case home, archive, week, month, invites, watch, books, wishes, me, finance, games, money, evening, cinema, cal, pomo, stats, trips
+    case home, archive, week, month, invites, watch, books, wishes, me, finance, games, money, evening, cinema, cal, pomo, stats, trips, tasks
 }
 
 /// One group of the bar: a circle at rest, a pill when it is where you are, a sub-menu on the second tap.
@@ -49,7 +49,7 @@ struct WaveBar: View {
     /// Pages that do not fit the row: a long press on the circle shows them above it.
     private let extras: [String: [(Page, String, String)]] = [
         "together": [(.wishes, "gift.fill", "Бажання"), (.finance, "piggy", "Банки"), (.archive, "photo.on.rectangle", "Спогади"), (.games, "gamecontroller.fill", "Ігри")],
-        "me": [(.stats, "chart.bar.fill", "Статистика"), (.pomo, "timer", "Помодоро")],
+        "me": [(.stats, "chart.bar.fill", "Статистика")],
     ]
 
     var body: some View {

@@ -43,6 +43,9 @@ struct MainView: View {
     @EnvironmentObject var state: AppState
     @StateObject private var store = Store()
     @State private var page: Page = .home
+    @State private var focusMode: FocusMode = .tasks
+    /// the timer of «Справи» is a whole dark screen: no bar over it
+    private var noBar: Bool { (page == .tasks || page == .pomo) && focusMode == .timer }
     @State private var calendarDay = Calendar.current.startOfDay(for: Date())
     @State private var wishOwner = ""
     @State private var menu: MeAction?
@@ -65,7 +68,7 @@ struct MainView: View {
     private var sections: [BarSection] {
         return [
             BarSection(id: "me", icon: nil, avatar: String(state.me?.name.prefix(1) ?? "Я"), label: state.me?.name ?? "Я", note: "", start: .home,
-                       subs: [BarSub(id: "home", icon: "house.fill", label: "Головна", page: .home)]
+                       subs: [BarSub(id: "home", icon: "house.fill", label: "Головна", page: .home), BarSub(id: "tasks", icon: "checklist", label: "Справи", page: .tasks)]
                        + (moneyOn ? [BarSub(id: "money", icon: "wallet.pass.fill", label: "Гроші", page: .money)] : [])
                        + [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil)],
                        photo: state.me?.avatarUrl),
@@ -85,7 +88,7 @@ struct MainView: View {
                 switch page {
                 case .home: DashboardPage(route: $route, page: $page)
                 case .archive: GalleryPage()
-                case .pomo: PomodoroPage(onClose: { page = .home })
+                case .pomo, .tasks: FocusPage(mode: $focusMode)
                 case .trips: TripsPage()
                 case .stats: StatsPage()
                 case .cal: CalendarPage()
@@ -110,12 +113,13 @@ struct MainView: View {
             WaveBar(page: $page, sections: sections, onAdd: { showAdd = true },
                     onSheet: { id in menu = id == "code" ? .code : .settings })
                 .frame(width: UIScreen.main.bounds.width)
-                .opacity(page == .pomo ? 0 : 1).offset(y: page == .pomo ? 120 : 0).allowsHitTesting(page != .pomo)
-                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: page == .pomo)
+                .opacity(noBar ? 0 : 1).offset(y: noBar ? 120 : 0).allowsHitTesting(!noBar)
+                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: noBar)
         }
         .overlay(alignment: .topTrailing) {
             BellButton(unread: store.unread) { menu = .notifications }
                 .padding(.trailing, 16).padding(.top, 4)
+                .opacity(noBar ? 0 : 1).allowsHitTesting(!noBar)
         }
         .environmentObject(store)
         .ignoresSafeArea(.keyboard)
@@ -151,6 +155,9 @@ struct MainView: View {
             await countFree()
             moneyOn = (try? await API.current().money())?.connected ?? false
         }
+        // the old «Помодоро» is the timer of «Справи»; leaving the timer there lands on «Справи»
+        .onChange(of: page) { _, p in if p == .pomo { focusMode = .timer } }
+        .onChange(of: focusMode) { _, m in if page == .pomo, m != .timer { page = .tasks } }
         .onChange(of: phase) { _, p in if p == .active { LiveTasks.sync(); Task { await store.refreshAll(); await countFree() } } }
         .onChange(of: state.pendingShare) { _, u in
             if let u { route = .share(u); state.pendingShare = nil }
