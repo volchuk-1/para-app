@@ -44,8 +44,9 @@ struct MainView: View {
     @StateObject private var store = Store()
     @State private var page: Page = .home
     @State private var focusMode: FocusMode = .tasks
+    @State private var focusPicking = false
     /// the timer of «Справи» is a whole dark screen: no bar over it
-    private var noBar: Bool { (page == .tasks || page == .pomo) && focusMode == .timer }
+    private var noBar: Bool { (page == .tasks || page == .pomo) && (focusMode == .timer || focusPicking) }
     @State private var calendarDay = Calendar.current.startOfDay(for: Date())
     @State private var wishOwner = ""
     @State private var menu: MeAction?
@@ -88,7 +89,7 @@ struct MainView: View {
                 switch page {
                 case .home: DashboardPage(route: $route, page: $page)
                 case .archive: GalleryPage()
-                case .pomo, .tasks: FocusPage(mode: $focusMode)
+                case .pomo, .tasks: FocusPage(mode: $focusMode, picking0: $focusPicking)
                 case .trips: TripsPage()
                 case .stats: StatsPage()
                 case .cal: CalendarPage()

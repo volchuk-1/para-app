@@ -19,6 +19,24 @@ struct TimerPrep: Equatable {
     var routine: Routine? = nil
     var step = 0
     var taskId: String? = nil
+    /// a focus session: the picked tasks, one at a time; the timer runs for the whole session
+    var queue: [QueueItem] = []
+    var idx = 0
+    var view: FocusView = .timer
+    /// «Почати фокус» is the start itself (the plain timer still waits for ▶)
+    var autostart = false
+}
+struct QueueItem: Equatable { let id: String; let title: String }
+/// what the big card shows: only the task, the clock, time since start, or the countdown
+enum FocusView: String, CaseIterable {
+    case minimal, clock, stopwatch, timer
+    var title: String {
+        switch self { case .minimal: return "Мінімал"; case .clock: return "Годинник"; case .stopwatch: return "Секундомір"; case .timer: return "Таймер" }
+    }
+}
+struct RowFrames: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) { value.merge(nextValue()) { $1 } }
 }
 
 private let weekdayNames = ["нд", "пн", "вт", "ср", "чт", "пт", "сб"]
@@ -73,6 +91,8 @@ struct TaskTags: View {
 
 struct FocusPage: View {
     @Binding var mode: FocusMode
+    /// true while tasks are picked: the bar steps aside for the timer button and the focus card
+    @Binding var picking0: Bool
     @EnvironmentObject var state: AppState
     @State private var day = Evening.iso(Date())
     @State private var list: TaskDay?
@@ -86,6 +106,15 @@ struct FocusPage: View {
     @State private var hot: FocusMode?
     @State private var pressTask: Task<Void, Never>?
     @State private var pickerFrame: CGRect = .zero
+    @State private var sel: Set<String> = []
+    @State private var card = false
+    @State private var fview: FocusView = .timer
+    @State private var fmin = 25
+    @State private var frames: [String: CGRect] = [:]
+    @State private var sliding = false
+    /// the lift after a slide is not a tap
+    @State private var justSlid = false
+    @Namespace private var morph
 
     private var partner: String { state.partner?.name ?? "партнер" }
     private var cal: Calendar { Dock.calendar }
@@ -105,6 +134,7 @@ struct FocusPage: View {
                     }
                     .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 130)
                 }
+                .scrollDisabled(sliding)
                 .background(Theme.cream.ignoresSafeArea())
                 .foregroundStyle(Theme.ink)
                 .transition(.opacity)
@@ -113,9 +143,15 @@ struct FocusPage: View {
                 Color.black.opacity(0.001).ignoresSafeArea()
                     .onTapGesture { withAnimation(.snappy) { pinned = false; picking = false } }
             }
+            focusLayer
             picker
         }
         .animation(.easeInOut(duration: 0.22), value: mode)
+        .animation(.spring(response: 0.5, dampingFraction: 0.82), value: card)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: sel.isEmpty)
+        .onChange(of: sel.isEmpty) { _, e in picking0 = !e }
+        .onDisappear { picking0 = false }
+        .onChange(of: mode) { _, _ in sel = []; card = false }
         .task(id: day) { await loadTasks() }
         .task { await loadRoutines() }
         .sheet(item: $opened, onDismiss: { Task { await loadTasks() } }) { t in
@@ -244,27 +280,69 @@ struct FocusPage: View {
                 }
             }
             goal(t, today: today)
+            if !sel.isEmpty {
+                HStack {
+                    Button("Скасувати") { withAnimation(.snappy) { sel = []; card = false } }
+                    Spacer()
+                    Text("Вибрано: \(sel.count)").font(.system(size: 14, weight: .semibold))
+                    Spacer()
+                    Button("Усі") { withAnimation(.snappy) { sel = Set((t?.tasks ?? []).filter { !$0.done }.map(\.id)) }; Haptic.hit(.light) }
+                }
+                .font(.system(size: 15, weight: .semibold)).tint(Theme.olive).frame(height: 36)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
             if let t {
-                if t.tasks.isEmpty {
-                    Text("На цей день справ нема. Додай — собі, на двох або попроси про щось.")
-                        .font(.system(size: 15)).foregroundStyle(Theme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(18)
-                        .background(Theme.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(t.tasks.enumerated()), id: \.element.id) { i, task in
-                            if i > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
-                            row(task)
-                        }
+                let rows = t.tasks.filter { !$0.done } + t.tasks.filter(\.done)
+                VStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, task in
+                        if i > 0 { Rectangle().fill(Theme.line).frame(height: 1).padding(.leading, 52) }
+                        row(task)
                     }
-                    .background(Theme.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    if !rows.isEmpty { Rectangle().fill(Theme.line).frame(height: 1).padding(.leading, 52) }
+                    Button { newTask = true } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "plus").font(.system(size: 15, weight: .bold)).frame(width: 24, height: 24).foregroundStyle(Theme.olive)
+                            Text(rows.isEmpty ? "Перша справа на цей день" : "Нова справа").font(.system(size: 16)).foregroundStyle(Theme.muted)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 13).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .coordinateSpace(name: "flist")
+                .onPreferenceChange(RowFrames.self) { frames = $0 }
+                .background(Theme.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .simultaneousGesture(slideToPick(rows))
+                if rows.contains(where: { !$0.done }) && sel.isEmpty {
+                    Text("Затисни справу й веди пальцем — виберуться кілька для фокусу.")
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.muted).frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.top, 2)
                 }
             } else {
                 RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.paper).frame(height: 160).opacity(0.6)
             }
-            bigButton("Справа", "plus") { newTask = true }
         }
     }
+
+    /// press a task and slide: every open task under the finger joins the pick (like a to-do app made for focus)
+    private func slideToPick(_ rows: [TaskItem]) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("flist")))
+            .onChanged { v in
+                guard case .second(true, let drag) = v else { return }
+                if !sliding { sliding = true; justSlid = true; Haptic.hit(.medium) }
+                guard let drag else { return }
+                if let id = frames.first(where: { $0.value.contains(drag.location) })?.key,
+                   let task = rows.first(where: { $0.id == id }), !task.done, !sel.contains(id) {
+                    _ = withAnimation(.snappy(duration: 0.2)) { sel.insert(id) }
+                    Haptic.hit(.light, 0.7)
+                }
+            }
+            .onEnded { _ in
+                sliding = false
+                Task { try? await Task.sleep(for: .milliseconds(350)); justSlid = false }
+            }
+    }
+
 
     private func goal(_ t: TaskDay?, today: String) -> some View {
         let total = t?.total ?? 0, done = t?.done ?? 0
@@ -288,33 +366,119 @@ struct FocusPage: View {
     }
 
     private func row(_ t: TaskItem) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                TaskTags(task: t, partner: partner)
-                Text(t.title).font(.system(size: 17, weight: .medium)).lineLimit(2)
-                    .strikethrough(t.done, color: Theme.muted.opacity(0.4))
-                    .foregroundStyle(t.done ? Theme.muted : Theme.ink)
+        let picked = sel.contains(t.id)
+        var bits: [String] = []
+        if t.important { bits.append("важливо") }
+        if t.assignee == "us" { bits.append("нам") } else if t.assignee == "partner" { bits.append("для: \(partner)") } else if t.createdBy == "partner" { bits.append("від: \(partner)") }
+        if let m = t.minutes { bits.append("\(m) хв") }
+        if let r = repeatText(t.repeat) { bits.append(r) }
+        if !t.items.isEmpty { bits.append("\(t.items.filter(\.done).count)/\(t.items.count)") }
+        return HStack(spacing: 14) {
+            Button { if sel.isEmpty { Task { await setDone(t, !t.done) } } else { toggle(t) } } label: {
+                ZStack {
+                    Circle().stroke(picked || t.done ? Theme.ink : Color(hex: 0xB9AE9F), lineWidth: 1.6)
+                    if t.done { Circle().fill(Theme.ink); Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.cream) }
+                    if picked { Circle().fill(Theme.ink).padding(5) }
+                }
+                .frame(width: 24, height: 24).contentShape(Circle().inset(by: -8))
+            }
+            .buttonStyle(PressScale())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t.title).font(.system(size: 16.5, weight: .medium)).lineLimit(2)
+                    .foregroundStyle(t.done ? Color(hex: 0xA99C8D) : (!sel.isEmpty && !picked ? Theme.muted : Theme.ink))
+                if !bits.isEmpty {
+                    Text(bits.joined(separator: " · ")).font(.system(size: 12)).lineLimit(1)
+                        .foregroundStyle(t.assignee == "partner" || t.createdBy == "partner" ? Color(hex: 0x4F6F95) : Theme.muted)
+                        .opacity(t.done ? 0.6 : 1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button { tapGo(t) } label: {
-                Text(t.done ? "✓" : t.minutes != nil ? "start" : !t.items.isEmpty ? "список" : "готово")
-                    .font(.system(size: t.done ? 20 : 13, weight: .semibold))
-                    .frame(width: 64, height: 64)
-                    .background(t.done ? Color(hex: 0xEFEAE0) : Theme.ink, in: Circle())
-                    .foregroundStyle(t.done ? Theme.muted : Theme.cream)
+        }
+        .padding(.leading, 14).padding(.trailing, 16).padding(.vertical, 13)
+        .background(picked ? Color(hex: 0xE6E0D3) : .clear)
+        .contentShape(Rectangle())
+        .background(GeometryReader { g in Color.clear.preference(key: RowFrames.self, value: [t.id: g.frame(in: .named("flist"))]) })
+        .onTapGesture { if justSlid { return }; if sel.isEmpty { opened = t } else { toggle(t) } }
+    }
+
+    private func toggle(_ t: TaskItem) {
+        guard !t.done else { return }
+        withAnimation(.snappy(duration: 0.2)) {
+            if sel.contains(t.id) { sel.remove(t.id) } else { sel.insert(t.id) }
+            if sel.isEmpty { card = false }
+        }
+        Haptic.hit(.light)
+    }
+
+    // MARK: the round timer button and the focus card that grows out of it
+
+    @ViewBuilder private var focusLayer: some View {
+        if mode == .tasks && !sel.isEmpty {
+            ZStack(alignment: .bottomTrailing) {
+                if card {
+                    Color.black.opacity(0.25).ignoresSafeArea().onTapGesture { withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { card = false } }
+                        .transition(.opacity)
+                    focusCard
+                } else {
+                    Button { withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) { card = true }; Haptic.hit(.medium) } label: {
+                        Image(systemName: "timer").font(.system(size: 22, weight: .semibold)).foregroundStyle(Theme.cream)
+                            .frame(width: 58, height: 58)
+                            .background { Circle().fill(Theme.ink).matchedGeometryEffect(id: "focus", in: morph) }
+                            .shadow(color: Theme.ink.opacity(0.3), radius: 12, y: 8)
+                    }
+                    .buttonStyle(PressScale())
+                    .padding(.trailing, 18).padding(.bottom, 18)
+                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        }
+    }
+
+    private var focusCard: some View {
+        let time: String = fview == .clock ? Date().shortTime : fview == .stopwatch ? "00:00" : fview == .minimal ? "\(fmin) хв" : String(format: "%02d:00", fmin)
+        let adjustable = fview == .timer || fview == .minimal
+        return VStack(spacing: 14) {
+            Menu {
+                Picker("Вигляд", selection: $fview) { ForEach(FocusView.allCases, id: \.self) { v in Text(v.title).tag(v) } }
+            } label: {
+                HStack(spacing: 5) { Text(fview.title).font(.system(size: 14, weight: .semibold)); Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .bold)) }
+                    .foregroundStyle(Color(hex: 0xC7CCD3))
+            }
+            HStack {
+                step("minus", -5).opacity(adjustable ? 1 : 0.25).disabled(!adjustable)
+                Spacer()
+                Text(time).font(.system(size: 64, weight: .medium)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+                    .contentTransition(.numericText()).foregroundStyle(Color(hex: 0xE9ECEF))
+                Spacer()
+                step("plus", 5).opacity(adjustable ? 1 : 0.25).disabled(!adjustable)
+            }
+            Button { startFocus() } label: {
+                Text("Почати фокус" + (sel.count > 1 ? " · \(sel.count) справи" : "")).font(.system(size: 16, weight: .bold))
+                    .frame(maxWidth: .infinity).frame(height: 54).background(Color(hex: 0xF4F4F5), in: Capsule()).foregroundStyle(Color(hex: 0x111111))
             }
             .buttonStyle(PressScale())
         }
-        .padding(.horizontal, 16).padding(.vertical, 14)
-        .contentShape(Rectangle())
-        .onTapGesture { opened = t }
+        .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 18)
+        .background { RoundedRectangle(cornerRadius: 34, style: .continuous).fill(Color(hex: 0x0F0F10)).matchedGeometryEffect(id: "focus", in: morph) }
+        .padding(.horizontal, 12).padding(.bottom, 10)
+        .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.2).delay(0.08)), removal: .opacity.animation(.easeIn(duration: 0.1))))
     }
 
-    private func tapGo(_ t: TaskItem) {
-        if t.done { Task { await setDone(t, false) } }
-        else if t.minutes != nil { toTimer(t) }
-        else if !t.items.isEmpty { opened = t }
-        else { Task { await setDone(t, true) } }
+    private func step(_ icon: String, _ d: Int) -> some View {
+        Button { withAnimation(.snappy) { fmin = min(180, max(5, fmin + d)) }; Haptic.hit(.light) } label: {
+            Image(systemName: icon).font(.system(size: 18, weight: .bold)).frame(width: 44, height: 44)
+                .background(Color(hex: 0x1F2023), in: Circle()).foregroundStyle(Color(hex: 0xC7CCD3))
+        }
+        .buttonStyle(PressScale())
+    }
+
+    private func startFocus() {
+        let q = (list?.tasks ?? []).filter { sel.contains($0.id) && !$0.done }.map { QueueItem(id: $0.id, title: $0.title) }
+        guard let first = q.first else { return }
+        prep = TimerPrep(name: first.title, minutes: fview == .timer || fview == .minimal ? fmin : 600, sub: "ФОКУС", queue: q, idx: 0, view: fview, autostart: true)
+        withAnimation(.snappy) { card = false; sel = [] }
+        switchTo(.timer)
     }
 
     private func setDone(_ t: TaskItem, _ on: Bool) async {
@@ -324,7 +488,7 @@ struct FocusPage: View {
     }
 
     private func toTimer(_ t: TaskItem) {
-        prep = TimerPrep(name: t.title, minutes: t.minutes ?? 25, sub: t.createdBy == "partner" ? "ВІД: \(partner.uppercased())" : "ЗАДАЧА", taskId: t.id)
+        prep = TimerPrep(name: t.title, minutes: t.minutes ?? 25, sub: t.createdBy == "partner" ? "ВІД: \(partner.uppercased())" : "ЗАДАЧА", taskId: t.id, queue: [QueueItem(id: t.id, title: t.title)])
         switchTo(.timer)
     }
 
@@ -467,6 +631,7 @@ struct TimerScreen<Top: View>: View {
     @State private var pair: PomoPair?
     @State private var busy = false
     @State private var setting = false
+    @State private var sideways: UIDeviceOrientation?
     private let bg = Color(hex: 0x2A2D31)
     private let pale = Color(hex: 0xC7CCD3)
     private let dark = Color(hex: 0x111111)
@@ -488,13 +653,42 @@ struct TimerScreen<Top: View>: View {
             .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 10)
         }
         .background(bg.ignoresSafeArea())
-        .task { pair = try? await API.current().pomo() }
+        .task {
+            pair = try? await API.current().pomo()
+            if prep.autostart {
+                prep.autostart = false
+                if pair?.me != nil { try? await API.current().stopPomo() ; pair = PomoPair(me: nil, partner: pair?.partner) }
+                await play()
+            }
+        }
+        // sideways: a desk clock — the task large, the time small; the screen stays awake
+        .overlay { if let o = sideways { desk(o) } }
+        .onAppear { UIDevice.current.beginGeneratingDeviceOrientationNotifications() }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            let o = UIDevice.current.orientation
+            withAnimation(.easeInOut(duration: 0.3)) {
+                if o.isLandscape { sideways = o } else if o == .portrait || o == .portraitUpsideDown { sideways = nil }
+            }
+            UIApplication.shared.isIdleTimerDisabled = sideways != nil && pair?.me != nil
+        }
         .task(id: pair?.me?.endsAt) { await waitForEnd() }
         .sheet(isPresented: $setting) { TimerSetSheet(prep: $prep, partner: partner).presentationDetents([.medium, .large]) }
         .sensoryFeedback(.impact(weight: .heavy), trigger: pair?.me?.startedAt)
     }
 
-    private var name: String { pair?.me?.activity ?? prep.name }
+    private var name: String { prep.queue.isEmpty ? (pair?.me?.activity ?? prep.name) : prep.name }
+
+    /// what the big card shows
+    private func digits(_ me: PomoState?, left: Int, total: Int) -> String {
+        switch prep.view {
+        case .clock: return Date().shortTime
+        case .stopwatch:
+            let s = me == nil ? 0 : total - left
+            return s >= 3600 ? String(format: "%d:%02d", s / 3600, s / 60 % 60) : String(format: "%02d:%02d", s / 60, s % 60)
+        default: return String(format: "%02d:%02d", left / 60, left % 60)
+        }
+    }
 
     private func bigCard(_ me: PomoState?, left: Int, total: Int) -> some View {
         let uk = Locale(identifier: "uk_UA")
@@ -504,12 +698,16 @@ struct TimerScreen<Top: View>: View {
             top(label)
             Color.clear.frame(height: 236)
                 .overlay {
-                    Text(String(format: "%02d:%02d", left / 60, left % 60))
+                    if prep.view == .minimal {
+                        Text(name).font(.system(size: fit(name) * 1.5, weight: .heavy)).multilineTextAlignment(.center).lineLimit(4).minimumScaleFactor(0.5).padding(.horizontal, 6)
+                    } else {
+                    Text(digits(me, left: left, total: total))
                         .font(.system(size: 166, weight: .medium)).monospacedDigit().tracking(-3)
                         .lineLimit(1).fixedSize()
                         .scaleEffect(x: 0.62, y: 1.3)
                         .contentTransition(.numericText(countsDown: true))
                         .animation(.snappy, value: left)
+                    }
                 }
             GeometryReader { g in
                 Capsule().fill(Color(hex: 0x2A2C30))
@@ -526,7 +724,11 @@ struct TimerScreen<Top: View>: View {
         let sub = me.map { $0.paused ? "ПАУЗА" : $0.together ? "РАЗОМ" : prep.sub } ?? prep.sub
         let line1: String
         let line2: String
-        if let r = prep.routine {
+        if !prep.queue.isEmpty {
+            let q = prep.queue
+            line1 = q.count > 1 ? "Справа \(prep.idx + 1) з \(q.count)." : "Одна справа — без перемикань."
+            line2 = prep.idx + 1 < q.count ? "Далі — \(q[prep.idx + 1].title)." : "Остання — потім перерва."
+        } else if let r = prep.routine {
             line1 = "Крок \(prep.step + 1) з \(r.steps.count)."
             line2 = prep.step + 1 < r.steps.count ? "Далі — \(r.steps[prep.step + 1].minutes) хв \(r.steps[prep.step + 1].name)." : "Останній крок — потім серія +1."
         } else if let me {
@@ -542,6 +744,13 @@ struct TimerScreen<Top: View>: View {
             Rectangle().frame(width: 110, height: 2).padding(.vertical, 16)
             Text(line1).font(.system(size: 15, weight: .bold))
             Text(line2).font(.system(size: 12)).padding(.top, 2)
+            if !prep.queue.isEmpty {
+                Button { Task { await queueDone() } } label: {
+                    Label(prep.idx + 1 < prep.queue.count ? "Готово · далі" : "Готово", systemImage: "checkmark").font(.system(size: 15, weight: .bold))
+                        .frame(maxWidth: .infinity).frame(height: 48).background(dark, in: Capsule()).foregroundStyle(pale)
+                }
+                .buttonStyle(PressScale()).disabled(busy).padding(.top, 14)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.top, 40).padding(.bottom, 20)
@@ -632,7 +841,8 @@ struct TimerScreen<Top: View>: View {
             Haptic.hit(.medium)
             return
         }
-        if let m = try? await API.current().startPomo(prep.name, minutes: prep.minutes, together: prep.together) {
+        let act = prep.queue.count > 1 ? "\(prep.name) +\(prep.queue.count - 1)" : prep.name
+        if let m = try? await API.current().startPomo(act, minutes: prep.minutes, together: prep.together) {
             pair = PomoPair(me: m, partner: pair?.partner)
             LiveTasks.add(id: "pomo", title: "⏱ \(prep.name)", start: Date(), end: m.endsAt)
         }
@@ -644,6 +854,46 @@ struct TimerScreen<Top: View>: View {
         LiveTasks.remove("pomo")
         pair = PomoPair(me: nil, partner: pair?.partner)
         Haptic.hit(.light)
+    }
+
+    private func desk(_ o: UIDeviceOrientation) -> some View {
+        GeometryReader { g in
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let me = pair?.me
+                let total = max(1, me?.total ?? prep.minutes * 60)
+                HStack(alignment: .bottom) {
+                    Text(name).font(.system(size: 44, weight: .bold)).lineLimit(3).minimumScaleFactor(0.5).foregroundStyle(Color(hex: 0xF2F2F2))
+                    Spacer(minLength: 20)
+                    Text(digits(me, left: me?.leftNow ?? total, total: total)).font(.system(size: 18, weight: .medium)).monospacedDigit().foregroundStyle(Color(hex: 0xF2F2F2).opacity(0.55))
+                }
+                .padding(.horizontal, 44).padding(.bottom, 36)
+                .frame(width: g.size.height, height: g.size.width, alignment: .bottomLeading)
+                .rotationEffect(.degrees(o == .landscapeLeft ? 90 : -90))
+                .frame(width: g.size.width, height: g.size.height)
+            }
+        }
+        .background(Color.black)
+        .ignoresSafeArea()
+        .transition(.opacity)
+    }
+
+    /// the current task of the session is done: the next comes up, the timer keeps going; after the last — rest
+    private func queueDone() async {
+        guard prep.idx < prep.queue.count else { return }
+        busy = true; defer { busy = false }
+        let cur = prep.queue[prep.idx]
+        _ = try? await API.current().patchTask(cur.id, API.TaskPatch(done: true, date: Evening.iso(Date())))
+        Haptic.hit(.heavy)
+        if prep.idx + 1 < prep.queue.count {
+            withAnimation(.snappy) { prep.idx += 1; prep.name = prep.queue[prep.idx].title }
+            return
+        }
+        Haptic.ok()
+        try? await API.current().stopPomo()
+        LiveTasks.remove("pomo")
+        pair = PomoPair(me: nil, partner: pair?.partner)
+        prep = TimerPrep()
+        onClose()
     }
 
     private func waitForEnd() async {
