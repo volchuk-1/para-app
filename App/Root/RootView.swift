@@ -49,6 +49,7 @@ struct MainView: View {
     @State private var showAdd = false
     @State private var route: Route?
     @State private var freeTonight: Int?
+    @State private var moneyOn = false
     @Environment(\.scenePhase) private var phase
 
     /// HomeView still talks in old tabs; map them onto pages.
@@ -65,7 +66,7 @@ struct MainView: View {
         let watching = store.watch.first { $0.status == .watching }.map { "\($0.title.prefix(12))\($0.episodeLabel.map { " " + $0 } ?? "")" } ?? "фільми, книжки"
         return [
             BarSection(id: "me", icon: nil, avatar: String(state.me?.name.prefix(1) ?? "Я"), label: state.me?.name ?? "Я", note: "налаштування", start: .me,
-                       subs: [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil), BarSub(id: "finance", icon: "dollarsign.circle.fill", label: "Фінанси", page: .finance),
+                       subs: (moneyOn ? [BarSub(id: "money", icon: "wallet.pass.fill", label: "Гроші", page: .money)] : []) + [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil), BarSub(id: "finance", icon: "dollarsign.circle.fill", label: "Фінанси", page: .finance),
                               BarSub(id: "games", icon: "gamecontroller.fill", label: "Ігри", page: .games)]),
             BarSection(id: "home", icon: "house.fill", avatar: nil, label: "Головна", note: next, start: .home,
                        subs: [BarSub(id: "home", icon: "house.fill", label: "Головна", page: .home), BarSub(id: "archive", icon: "square.stack.fill", label: "Історія", page: .archive)]),
@@ -92,6 +93,7 @@ struct MainView: View {
                 case .wishes: UsView(route: $route, who: $wishOwner)
                 case .me: MePage(page: $page) { menu = .settings }
                 case .finance: FinancePage()
+                case .money: MoneyPage()
                 case .games: ScrollView { VStack(alignment: .leading, spacing: 14) { PageTitle(plain: "Ігри", italic: "для двох"); EmptyCard(text: "Картки й інші ігри переїдуть сюди згодом.") }.padding(.horizontal, 18).padding(.top, 8) }.background(Theme.cream.ignoresSafeArea())
                 }
             }
@@ -116,7 +118,7 @@ struct MainView: View {
             switch m {
             case .notifications: NotificationsView()
             case .code: CoupleCodeView().presentationDetents([.medium])
-            case .settings: SettingsView()
+            case .settings: SettingsView().onDisappear { Task { moneyOn = (try? await API.current().money())?.connected ?? false } }
             }
         }
         .sheet(item: $route) { r in
@@ -132,6 +134,7 @@ struct MainView: View {
             Reminders.askPermission()
             await store.refreshAll()
             await countFree()
+            moneyOn = (try? await API.current().money())?.connected ?? false
         }
         .onChange(of: phase) { _, p in if p == .active { Task { await store.refreshAll(); await countFree() } } }
         .onChange(of: state.pendingShare) { _, u in

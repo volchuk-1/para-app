@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var code: String?
     @State private var message: String?
     @State private var confirmSignOut = false
+    @State private var scriptKey: String?
 
     var body: some View {
         NavigationStack {
@@ -28,6 +29,16 @@ struct SettingsView: View {
                         Button("Показати код пари") { Task { await loadCode() } }
                     }
                 } header: { Text("Код пари") } footer: { Text("Для вас обох і для будь-якого пристрою: «У мене є код» → обрати себе.") }
+                Section {
+                    if let scriptKey {
+                        Text(scriptKey).font(.system(size: 13, design: .monospaced)).textSelection(.enabled)
+                        Button("Скопіювати") { UIPasteboard.general.string = scriptKey; message = "Скопійовано — встав у Scriptable" }
+                    } else {
+                        Button("Ключ для віджета") { Task { await newScriptKey() } }
+                    }
+                } header: { Text("Віджет «Витрати»") } footer: {
+                    Text("Щоб твої витрати й борг ішли в «Мої гроші». Встав ключ у Scriptable: «Витрати» → «🔗 Підключити DaVincit». Бачиш це лише ти; новий ключ вимикає старий.")
+                }
                 Section("Сповіщення") {
                     NavigationLink("Перевірити push і віджети") { DiagnosticsView() }
                 }
@@ -57,6 +68,10 @@ struct SettingsView: View {
                 Button("Вийти", role: .destructive) { state.signOut(); dismiss() }
             }
         }
+    }
+
+    private func newScriptKey() async {
+        do { scriptKey = try await state.api.newScriptKey(); message = nil } catch { message = error.localizedDescription }
     }
 
     private func rename() async {

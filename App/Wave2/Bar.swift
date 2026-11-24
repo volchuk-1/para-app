@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Every screen the bar can open.
 enum Page: String, Hashable {
-    case home, archive, week, month, invites, watch, books, wishes, me, finance, games
+    case home, archive, week, month, invites, watch, books, wishes, me, finance, games, money
 }
 
 /// One group of the bar: a circle at rest, a pill when it is where you are, a sub-menu on the second tap.

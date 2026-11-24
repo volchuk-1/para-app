@@ -39,4 +39,15 @@ final class Wave2Tests: XCTestCase {
         XCTAssertEqual(w.rating?.rt, 92)
         XCTAssertEqual(w.reviews?["m"], "Супер")
     }
+
+    func testMoneyDecodesAndTexts() throws {
+        let json = #"{"connected":true,"updatedAt":"2026-11-24T10:00:00.000Z","month":{"spend":9930,"income":20020,"prevSpend":2200,"cats":[{"cat":"food","label":"Продукти","amount":5200,"prev":0}]},"cards":[{"name":"Біла ₴","balance":1200,"credit":0,"limit":null,"at":null}],"pumb":[{"name":"ПУМБ","balance":-37408.26,"credit":null,"limit":63000,"at":1795304880000}],"debts":[{"name":"Друг","amount":2200,"cur":"$","uah":100100,"rateMonth":0,"monthly":0,"due":"2027-08-30","link":null,"note":"","live":false}],"total":100100,"settings":{"income":30000,"life":15000,"usdRate":45.5,"jars":[{"id":"j","title":"Відпочинок","balance":0,"monthly":3000,"on":true}]},"free":12000,"pay":12000,"plan":[{"name":"Друг","done":"2027-10","interest":0,"due":"2027-08-30","leftAtDue":20118,"needForDue":17200}]}"#
+        let m = try API.decoder.decode(MoneyResult.self, from: Data(json.utf8))
+        XCTAssertEqual(m.debts[0].cur, "$")
+        XCTAssertEqual(m.settings.jars[0].monthly, 3000)
+        XCTAssertEqual(MoneyText.until(m.plan[0].done), "до жовтня 2027")
+        XCTAssertEqual(MoneyText.until(nil), "понад 10 років")
+        XCTAssertEqual(MoneyText.date("2027-08-30"), "30 серпня 2027")
+        XCTAssertEqual(MoneyText.uah(37408.26), "37 408 ₴")
+    }
 }
