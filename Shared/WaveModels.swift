@@ -144,6 +144,10 @@ struct Wish: Codable, Identifiable, Equatable, Hashable {
     var status: String
     let addedBy: String
     var dropPercent: Int?
+    var category: String? = nil
+
+    static let categories: [(String, String)] = [("tech", "Техніка"), ("clothes", "Одяг"), ("beauty", "Косметика"), ("books", "Книги"), ("home", "Дім"), ("fun", "Розваги"), ("other", "Інше")]
+    var cat: String { category ?? "other" }
 
     var priceText: String? {
         guard let price else { return nil }

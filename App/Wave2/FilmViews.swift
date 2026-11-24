@@ -14,16 +14,19 @@ struct WatchPage: View {
                 PageTitle(plain: "Разом", italic: "дивимось", sub: "Серіали, фільми, аніме")
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach([WatchStatus.watching, .want, .done], id: \.self) { s in
+                        ForEach([WatchStatus.watching, .want, .done, .dropped], id: \.self) { s in
                             OutlineChip(text: s.label, on: tab == s) { withAnimation(.snappy) { tab = s } }
                         }
                         OutlineChip(text: "Знайти", icon: "magnifyingglass", on: false) { route = .watchSearch }
                     }
+                    .padding(.horizontal, 18)
                 }
-                let list = store.watch.filter { tab == .done ? ($0.status == .done || $0.status == .dropped) : $0.status == tab }
+                .padding(.horizontal, -18)
+                let list = store.watch.filter { $0.status == tab }
                 if list.isEmpty {
                     EmptyCard(text: tab == .watching ? "Зараз нічого не дивитесь. Відкрий фільм із «Хочемо» й натисни «Почати»."
-                              : tab == .want ? "Поділись відео з TikTok чи YouTube або знайди через «Знайти»." : "Тут будуть подивлені — з вашими оцінками й відгуками.")
+                              : tab == .want ? "Поділись відео з TikTok чи YouTube або знайди через «Знайти»."
+                              : tab == .dropped ? "Тут те, що кинули. Передумали — відкрий і зміни статус." : "Тут будуть подивлені — з вашими оцінками й відгуками.")
                 }
                 ForEach(list) { w in
                     Button { open = w } label: { FilmCard(item: w) }.buttonStyle(.plain)
@@ -122,9 +125,12 @@ struct FilmPage: View {
                         }
                         Button("Видалити зі списку", role: .destructive) { confirmDelete = true }
                     }
-                    .padding(.horizontal, 22).padding(.top, 8).padding(.bottom, 130)
+                    .padding(.horizontal, 22).padding(.top, 24).padding(.bottom, 130)
+                    .background(Theme.paper, in: UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30, style: .continuous))
+                    .padding(.top, -34)
                 }
             }
+            .ignoresSafeArea(edges: .top)
             bottomBar
         }
         .background(Theme.paper.ignoresSafeArea())
@@ -142,15 +148,16 @@ struct FilmPage: View {
             ForEach(urls.isEmpty ? [""] : urls, id: \.self) { u in RemoteImage(url: u.isEmpty ? nil : u) }
         }
         .tabViewStyle(.page(indexDisplayMode: .automatic))
-        .frame(height: 330)
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .padding(10)
+        .frame(height: 440)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .overlay(alignment: .top) { LinearGradient(colors: [.black.opacity(0.35), .clear], startPoint: .top, endPoint: .bottom).frame(height: 120).allowsHitTesting(false) }
         .overlay(alignment: .topLeading) {
             Button { dismiss() } label: {
                 Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).frame(width: 40, height: 40)
                     .background(Theme.paper.opacity(0.9), in: Circle())
             }
-            .foregroundStyle(Theme.ink).padding(24)
+            .foregroundStyle(Theme.ink).padding(.leading, 18).padding(.top, 58)
         }
     }
 
@@ -292,7 +299,7 @@ struct PageTitle: View {
     var sub: String? = nil
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            (Text(plain + " ") + Text(italic).italic().fontWeight(.regular)).font(.serif(34, .bold)).padding(.trailing, 60)
+            Text(plain + " " + italic).font(.serif(34, .bold)).padding(.trailing, 60)
             if let sub { Text(sub).font(.system(size: 15)).foregroundStyle(Theme.muted) }
         }
     }
@@ -310,9 +317,8 @@ struct OutlineChip: View {
                 Text(text)
             }
             .font(.system(size: 14, weight: .semibold))
-            .padding(.horizontal, 16).frame(height: 40)
-            .background(on ? Theme.ink : .clear, in: Capsule())
-            .overlay(Capsule().stroke(Theme.ink, lineWidth: 1.5))
+            .padding(.horizontal, 16).frame(height: 38)
+            .background(on ? Theme.ink : Theme.tan.opacity(0.6), in: Capsule())
             .foregroundStyle(on ? Theme.paper : Theme.ink)
         }
         .buttonStyle(.plain)

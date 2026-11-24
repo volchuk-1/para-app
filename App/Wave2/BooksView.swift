@@ -248,10 +248,33 @@ struct AddBookSheet: View {
     @State private var scanning = false
     @State private var note: String?
     @State private var busy = false
+    @State private var query = ""
+    @State private var results: [IsbnFound] = []
+    @State private var searchNote: String?
 
     var body: some View {
         NavigationStack {
             SoftForm {
+                Section {
+                    HStack {
+                        TextField("Назва або автор: Кафка, Процес…", text: $query).submitLabel(.search).onSubmit { Task { await search() } }
+                        Button("Шукати") { Task { await search() } }.disabled(query.trimmingCharacters(in: .whitespaces).count < 2)
+                    }
+                    if let searchNote { Text(searchNote).font(.system(size: 13)).foregroundStyle(Theme.muted) }
+                    ForEach(results, id: \.self) { b in
+                        Button { fill(b) } label: {
+                            HStack(spacing: 10) {
+                                Color.clear.frame(width: 34, height: 50).overlay { if let c = b.coverUrl { RemoteImage(url: c) } else { Theme.tan } }
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(b.title).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                                    Text([b.author, b.pages.map { "\($0) с." }].compactMap { $0 }.joined(separator: " · ")).font(.system(size: 12)).foregroundStyle(Theme.muted)
+                                }
+                            }
+                        }
+                        .foregroundStyle(Theme.ink)
+                    }
+                } header: { Text("Знайти") }
                 if mode == .scan {
                     Section {
                         if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
@@ -284,6 +307,19 @@ struct AddBookSheet: View {
             .onAppear { if mode == .scan && DataScannerViewController.isSupported && DataScannerViewController.isAvailable { scanning = true } }
         }
         .tint(Theme.olive)
+    }
+
+    private func search() async {
+        searchNote = "Шукаю…"
+        do {
+            results = try await API.current().searchBooks(query)
+            searchNote = results.isEmpty ? "Не знайшов — впиши вручну нижче або сфотографуй обкладинку потім." : nil
+        } catch { searchNote = error.localizedDescription }
+    }
+
+    private func fill(_ b: IsbnFound) {
+        title = b.title; author = b.author ?? ""; pages = b.pages.map(String.init) ?? ""; cover = b.coverUrl; isbn = b.isbn
+        results = []; searchNote = "Заповнено — перевір і натисни «Додати»."
     }
 
     private func lookup(_ code: String) async {

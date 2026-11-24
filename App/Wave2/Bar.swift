@@ -136,22 +136,22 @@ struct WaveBar: View {
     /// A circle always opens its first page (В / Д → Головна), whatever was open in that group before.
     private func tap(_ s: BarSection) {
         let first = s.subs.first?.page ?? s.start
-        if s.id == active, open, page == first { fold(); return }
+        if s.id == active, open { fold(); return }
         withAnimation(spring) { active = s.id }
         if page != first { page = first }
         if s.subs.isEmpty { fold() } else { unfold() }
     }
 
+    /// The row stays open after a pick — it closes only by tapping its circle or choosing another group.
     private func pick(_ x: BarSub, in s: BarSection) {
-        fold(after: 0.65)
         guard let p = x.page else { onSheet(x.id); return }
         lastPick[s.id] = p
         page = p
     }
 
     private func unfold() {
+        foldTicket += 1
         withAnimation(spring) { open = true }
-        fold(after: 6)
     }
 
     /// Folds the row now or after a pause; a newer tap cancels an older pause.

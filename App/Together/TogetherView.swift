@@ -16,7 +16,7 @@ struct TogetherView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        (Text("Разом ") + Text("дивимось").italic()).font(.serif(34, .bold))
+                        Text("Разом дивимось").font(.serif(34, .bold))
                         Spacer()
                         Button { route = .watchSearch } label: {
                             Image(systemName: "magnifyingglass").font(.system(size: 17, weight: .bold))

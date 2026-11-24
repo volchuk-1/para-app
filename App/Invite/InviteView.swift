@@ -63,7 +63,7 @@ struct InviteView: View {
         ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 12) {
                 let (first, rest) = firstWord(event.title)
-                (Text(first).font(.serif(29, .bold)).italic() + Text(rest).font(.system(size: 25, weight: .medium)))
+                (Text(first).font(.serif(29, .bold)) + Text(rest).font(.serif(29, .bold)))
                     .padding(.trailing, 70)
                 Text("#побачення #наше").font(.system(size: 12)).foregroundStyle(Theme.muted.opacity(0.7))
                 VStack(alignment: .leading, spacing: 6) {

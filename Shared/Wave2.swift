@@ -40,7 +40,8 @@ enum BookStatus: String, Codable, CaseIterable, Identifiable {
 
 struct BooksResult: Decodable { let books: [Book] }
 struct BookResult: Decodable { let book: Book }
-struct IsbnFound: Decodable, Equatable { let title: String; let author: String?; let pages: Int?; let coverUrl: String?; let isbn: String }
+struct IsbnFound: Decodable, Equatable, Hashable { let title: String; let author: String?; let pages: Int?; let coverUrl: String?; let isbn: String? }
+struct BookSearchResult: Decodable { let results: [IsbnFound] }
 struct IsbnResult: Decodable { let found: IsbnFound? }
 
 struct DayBlock: Codable, Equatable, Hashable {
@@ -214,6 +215,10 @@ extension API {
     func isbn(_ code: String) async throws -> IsbnFound? {
         let q = code.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? code
         return (try await get("/books/isbn/\(q)") as IsbnResult).found
+    }
+    func searchBooks(_ q: String) async throws -> [IsbnFound] {
+        let e = q.trimmingCharacters(in: .whitespaces).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
+        return (try await get("/books/search?q=\(e)") as BookSearchResult).results
     }
     func uploadBookCover(_ id: String, jpeg: Data) async throws -> Book { (try await upload("/books/\(id)/cover", jpeg: jpeg) as BookResult).book }
 

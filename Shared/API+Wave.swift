@@ -72,7 +72,7 @@ extension API {
 
     // MARK: Wishes
     struct WishBody: Encodable { var url: String?; var title: String?; var price: Double?; var note: String?; var ownerId: String? }
-    struct WishPatch: Encodable { var status: String?; var note: String?; var title: String?; var price: Double?; var ownerId: String? }
+    struct WishPatch: Encodable { var status: String?; var note: String?; var title: String?; var price: Double?; var ownerId: String?; var category: String? = nil }
     func wishes() async throws -> [Wish] { (try await get("/wishes") as WishList).wishes }
     func addWish(_ b: WishBody) async throws -> Wish { (try await send("POST", "/wishes", b) as WishResult).wish }
     func patchWish(_ id: String, _ p: WishPatch) async throws -> Wish { (try await send("PATCH", "/wishes/\(id)", p) as WishResult).wish }

@@ -12,13 +12,15 @@ struct UsView: View {
 
     private let cols = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
 
+    @State private var cat: String?
+
     var body: some View {
         ZStack(alignment: .top) {
             Theme.cream.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        (Text("Наші ") + Text("бажання").italic()).font(.serif(34, .bold))
+                        Text("Наші бажання").font(.serif(34, .bold))
                         Spacer()
                         Button { showSettings = true } label: {
                             Image(systemName: "gearshape.fill").font(.system(size: 17))
@@ -30,16 +32,38 @@ struct UsView: View {
                         if let p = state.partner { personChip(p) }
                         if let m = state.me { personChip(m) }
                         Spacer()
-                        Button { showBought.toggle() } label: { Chip(text: "Куплене", selected: showBought) }.buttonStyle(.plain)
+                        Button { showBought.toggle(); cat = nil } label: { Chip(text: "Куплене", selected: showBought) }.buttonStyle(.plain)
                     }
-                    let list = items
-                    if list.isEmpty {
-                        Button { route = .wish } label: {
-                            MuseumTile(fill: Theme.paper, tag: "Порожньо", title: "Додай перше", underlined: "бажання.",
-                                       meta: "Посилання з будь-якого магазину — назва, фото й ціна підтягнуться самі",
-                                       footer: "Додати")
+                    let mine = items
+                    let cats = Wish.categories.filter { c in mine.contains { $0.cat == c.0 } }
+                    if cats.count > 1 {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                catChip(nil, "Усе")
+                                ForEach(cats, id: \.0) { c in catChip(c.0, c.1) }
+                            }
+                            .padding(.horizontal, 16)
                         }
-                        .buttonStyle(.plain)
+                        .padding(.horizontal, -16)
+                    }
+                    let list = cat.map { c in mine.filter { $0.cat == c } } ?? mine
+                    if list.isEmpty {
+                        let wanting = store.wishes.filter { $0.ownerId == who && $0.status != "bought" }.count
+                        if showBought {
+                            Button { if wanting > 0 { showBought = false } else { route = .wish } } label: {
+                                MuseumTile(fill: Theme.paper, tag: "Поки порожньо", title: "Ще нічого не", underlined: "куплено.",
+                                           meta: wanting > 0 ? "Купили щось із бажань? Відкрий його й натисни «Куплено» — воно переїде сюди. У бажаннях зараз: \(wanting)." : "Тут будуть куплені бажання.",
+                                           footer: wanting > 0 ? "До бажань" : "Додати бажання")
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button { route = .wish } label: {
+                                MuseumTile(fill: Theme.paper, tag: "Порожньо", title: "Додай перше", underlined: "бажання.",
+                                           meta: "Посилання з будь-якого магазину — назва, фото й ціна підтягнуться самі",
+                                           footer: "Додати")
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     LazyVGrid(columns: cols, spacing: 10) {
                         ForEach(list) { w in
@@ -56,6 +80,15 @@ struct UsView: View {
         .onAppear { if who.isEmpty { who = state.partner?.id ?? "" } }
         .sheet(item: $open) { w in WishDetailView(wish: w) }
         .sheet(isPresented: $showSettings) { SettingsView() }
+    }
+
+    private func catChip(_ k: String?, _ l: String) -> some View {
+        Button { cat = k } label: {
+            Text(l).font(.system(size: 13.5, weight: .semibold)).padding(.horizontal, 13).frame(height: 34)
+                .background(cat == k ? Theme.ink : Theme.tan.opacity(0.6), in: Capsule())
+                .foregroundStyle(cat == k ? Theme.paper : Theme.ink)
+        }
+        .buttonStyle(.plain)
     }
 
     private var items: [Wish] {
@@ -135,6 +168,19 @@ struct WishDetailView: View {
                     }
                 }
                 if let n = wish.note { Text(n).font(.system(size: 15)).foregroundStyle(Theme.muted) }
+                Text("Категорія").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.muted)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(Wish.categories, id: \.0) { c in
+                            Button { Task { await setCategory(c.0) } } label: {
+                                Text(c.1).font(.system(size: 13.5, weight: .semibold)).padding(.horizontal, 13).frame(height: 34)
+                                    .background(wish.cat == c.0 ? Theme.olive : Theme.tan.opacity(0.6), in: Capsule())
+                                    .foregroundStyle(wish.cat == c.0 ? Theme.cream : Theme.ink)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
                 if let u = wish.url?.asURL {
                     Button { openURL(u) } label: {
                         Label("Відкрити в магазині", systemImage: "safari").frame(maxWidth: .infinity)
@@ -158,6 +204,10 @@ struct WishDetailView: View {
         .confirmationDialog("Видалити бажання?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Видалити", role: .destructive) { Task { await remove() } }
         }
+    }
+
+    private func setCategory(_ c: String) async {
+        await store.run { let w = try await API.current().patchWish(wish.id, .init(category: c)); wish = w; store.upsert(w) }
     }
 
     private func setStatus(_ s: String) async {
