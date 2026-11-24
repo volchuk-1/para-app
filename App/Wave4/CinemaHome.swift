@@ -12,6 +12,7 @@ struct CinemaHome: View {
     @State private var add: Found?
     @State private var discover = false
     @State private var roulette = false
+    @State private var flip: FlipFilm?
     private let bg = Color(hex: 0x1C1A1A), card = Color(hex: 0x272424), accent = Color(hex: 0xF2B640)
 
     var body: some View {
@@ -26,6 +27,7 @@ struct CinemaHome: View {
                     pill("Знайти", "magnifyingglass") { route = .watchSearch }
                 }
                 .padding(.horizontal, 18)
+                row("⭐ Обране", store.watch.filter { $0.fav == true })
                 row("Дивимось зараз", watching.filter { $0.id != hero?.id })
                 row("Хочемо", store.watch.filter { $0.status == .want && $0.id != hero?.id })
                 if let a = advice, !a.results.isEmpty {
@@ -56,6 +58,7 @@ struct CinemaHome: View {
         .fullScreenCover(item: $open) { w in FilmPage(item: w, route: $route) }
         .sheet(item: $add) { f in FoundSheet(found: f) }
         .fullScreenCover(isPresented: $discover) { DiscoverPage() }
+        .fullScreenCover(item: $flip) { f in TrailerFlip(film: f, open: { id in open = store.watch.first { $0.id == id } }) }
         .sheet(isPresented: $roulette) { RouletteSheet().presentationDetents([.large]) }
     }
 
@@ -97,10 +100,11 @@ struct CinemaHome: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 12) {
                         ForEach(items) { w in
-                            Button { open = w } label: {
+                            Button { flip = FlipFilm(title: w.title, poster: w.posterUrl ?? w.backdropUrl, watchId: w.id, tmdbId: w.tmdbId, mediaType: w.mediaType, fav: w.fav == true) } label: {
                                 poster(w.posterUrl ?? w.backdropUrl, w.title, sub: w.status == .done ? (w.avg.map { "разом " + String(format: "%.1f", $0) } ?? "оцініть") : (w.status == .watching ? w.episodeLabel : w.year.map(String.init)))
                             }
                             .buttonStyle(.plain)
+                            .contextMenu { Button("Відкрити сторінку", systemImage: "arrow.up.right") { open = w } }
                         }
                     }
                     .padding(.horizontal, 18)
@@ -532,9 +536,11 @@ struct RouletteSheet: View {
         if await store.run({
             if let w = s.item {
                 store.upsert(try await API.current().patchWatch(w.id, .init(status: WatchStatus.watching.rawValue)))
+                try? await API.current().turnDone(w.id)
             } else if let f = s.found {
                 let w = try await API.current().addWatch(f.candidate, sourceUrl: nil)
                 store.upsert(try await API.current().patchWatch(w.id, .init(status: WatchStatus.watching.rawValue)))
+                try? await API.current().turnDone(w.id)
             }
         }) { dismiss() }
     }

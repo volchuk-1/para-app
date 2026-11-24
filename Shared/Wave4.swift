@@ -102,6 +102,11 @@ struct HistoryItem: Codable, Identifiable, Hashable {
     var ratings: [String: Int]? = nil
     var avg: Double? = nil
     var reviews: [ReviewLine]? = nil
+    var lat: Double? = nil
+    var lon: Double? = nil
+    var temp: Int? = nil
+    var count: Int? = nil
+    var photos: [String]? = nil
 }
 struct ReviewLine: Codable, Hashable { let memberId: String; let text: String }
 struct HistoryResult: Decodable { let items: [HistoryItem] }
@@ -120,7 +125,10 @@ extension API {
     }
     struct JarBody: Encodable { let category: String; let visibility: String; let purpose: String?; let due: String?; let monthly: Double? }
     struct PersonBody: Encodable { let name: String; let relation: String?; let birthday: String; let year: Int? }
-    struct MemoryBody: Encodable { let title: String; let date: String; let note: String? }
+    struct MemoryBody: Encodable {
+        let title: String; let date: String; let note: String?
+        var eventId: String? = nil; var lat: Double? = nil; var lon: Double? = nil; var place: String? = nil; var takenAt: Date? = nil
+    }
     struct RemindBody: Encodable { let title: String; let date: String; let movieUrl: String? }
     struct EpisodeScore: Encodable {
         let score: Int?

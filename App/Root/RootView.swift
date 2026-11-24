@@ -50,6 +50,7 @@ struct MainView: View {
     @State private var route: Route?
     @State private var freeTonight: Int?
     @State private var moneyOn = false
+    @State private var splash = true
     @Environment(\.scenePhase) private var phase
 
     /// HomeView still talks in old tabs; map them onto pages.
@@ -74,7 +75,7 @@ struct MainView: View {
                        subs: [BarSub(id: "evening", icon: "moon.stars.fill", label: "Вечір", page: .evening), BarSub(id: "watch", icon: "popcorn.fill", label: "Дивимось", page: .watch),
                               BarSub(id: "cinema", icon: "film.fill", label: "Кіно", page: .cinema),
                               BarSub(id: "books", icon: "books.vertical.fill", label: "Книжки", page: .books), BarSub(id: "wishes", icon: "gift.fill", label: "Бажання", page: .wishes),
-                              BarSub(id: "finance", icon: "banknote.fill", label: "Банки", page: .finance),
+                              BarSub(id: "finance", icon: "piggy", label: "Банки", page: .finance),
                               BarSub(id: "archive", icon: "photo.on.rectangle", label: "Історія", page: .archive)]),
         ]
     }
@@ -83,8 +84,10 @@ struct MainView: View {
         ZStack(alignment: .bottom) {
             Group {
                 switch page {
-                case .home: HomeView(tab: legacyTab, route: $route)
-                case .archive: HistoryFeed()
+                case .home: DashboardPage(route: $route, page: $page)
+                case .archive: GalleryPage()
+                case .pomo: PomodoroPage()
+                case .stats: StatsPage()
                 case .cal: CalendarPage()
                 case .week: WeekPage()
                 case .month: MonthPage()
@@ -133,9 +136,15 @@ struct MainView: View {
             case .share(let u): ShareFlowView(url: u) { route = nil; Task { await store.refreshAll() } }
             }
         }
+        .overlay { if splash { SplashView().transition(.opacity.combined(with: .scale(scale: 1.06))).zIndex(50) } }
         .task {
+            let t0 = Date()
             Reminders.askPermission()
             await store.refreshAll()
+            // the splash stays until the data is here (at least a moment, so it does not flash)
+            let left = 1.1 - Date().timeIntervalSince(t0)
+            if left > 0 { try? await Task.sleep(for: .seconds(left)) }
+            withAnimation(.easeOut(duration: 0.55)) { splash = false }
             await countFree()
             moneyOn = (try? await API.current().money())?.connected ?? false
         }

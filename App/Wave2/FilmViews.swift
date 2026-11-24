@@ -122,6 +122,12 @@ struct FilmPage: View {
                                     .background(Theme.ink.opacity(0.08), in: Capsule()).foregroundStyle(Theme.muted)
                                 Text(item.title).font(.system(size: 22, weight: .bold)).lineLimit(2)
                             }
+                            Spacer(minLength: 0)
+                            Button { Task { let on = !(item.fav ?? false); try? await API.current().setFav(item.id, on); item.fav = on; store.upsert(item) } } label: {
+                                Image(systemName: item.fav == true ? "star.fill" : "star").font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(item.fav == true ? Color(hex: 0xE0A72E) : Theme.muted).frame(width: 40, height: 40).background(Theme.tan.opacity(0.5), in: Circle())
+                            }
+                            .buttonStyle(.plain)
                         }
                         rates
                         Picker("Статус", selection: Binding(get: { item.status }, set: { s in Task { await patch { try await API.current().patchWatch(item.id, .init(status: s.rawValue)) } } })) {

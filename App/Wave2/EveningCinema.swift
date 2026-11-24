@@ -275,6 +275,7 @@ struct CinemaPage: View {
     @State private var tab = "now"
     @State private var day = Evening.iso(Date())
     @State private var book: BookPick?
+    @State private var flip: FlipFilm?
     @State private var favs: [String: Bool] = [:]
     @State private var error: String?
     @State private var reminded: Set<String> = []
@@ -305,6 +306,7 @@ struct CinemaPage: View {
         .task { await load() }
         .refreshable { await load() }
         .sheet(item: $book) { b in CinemaInviteSheet(film: b.film, session: b.session, plan: avail.first { $0.date == b.session.date }) }
+        .fullScreenCover(item: $flip, onDismiss: { Task { await load() } }) { f in TrailerFlip(film: f) }
         .overlay(alignment: .top) { bg.frame(height: 0).background(bg.ignoresSafeArea(edges: .top)) }
     }
 
@@ -348,6 +350,7 @@ struct CinemaPage: View {
                 Color.clear.frame(width: 78, height: 112)
                     .overlay { if let p = film.poster { RemoteImage(url: p) } else { card } }
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .onTapGesture { flip = FlipFilm(title: film.title, poster: film.poster, watchId: film.watchId, tmdbId: nil, mediaType: nil, fav: favs[film.title] ?? (film.fav == true)) }
                     .overlay(alignment: .top) {
                         if film.watchId != nil {
                             Text("у «Хочемо»").font(.system(size: 9.5, weight: .semibold)).padding(.horizontal, 5).padding(.vertical, 2)
@@ -392,6 +395,7 @@ struct CinemaPage: View {
                     Color.clear.frame(height: 190)
                         .overlay { if let p = s.poster { RemoteImage(url: p) } else { card } }
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .onTapGesture { flip = FlipFilm(title: s.title, poster: s.poster, watchId: nil, tmdbId: nil, mediaType: nil, fav: favs[s.title] ?? (s.fav == true)) }
                         .overlay(alignment: .bottomLeading) {
                             if s.onSale { Text("Квитки у продажу").font(.system(size: 10.5, weight: .bold)).padding(.horizontal, 7).padding(.vertical, 3).background(accent, in: RoundedRectangle(cornerRadius: 7)).foregroundStyle(bg).padding(8) }
                         }

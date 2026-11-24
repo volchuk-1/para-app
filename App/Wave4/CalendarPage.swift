@@ -638,6 +638,14 @@ enum LiveTasks {
         sync()
     }
 
+    /// Ends a timer now (pomodoro stopped, a plan cancelled).
+    static func remove(_ id: String) {
+        let all = load().filter { $0.id != id }
+        if let d = try? JSONEncoder().encode(all) { UserDefaults.standard.set(d, forKey: key) }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["task-\(id)"])
+        for a in Activity<TaskAttributes>.activities where a.attributes.taskId == id { Task { await a.end(nil, dismissalPolicy: .immediate) } }
+    }
+
     static func load() -> [Item] {
         guard let d = UserDefaults.standard.data(forKey: key) else { return [] }
         return (try? JSONDecoder().decode([Item].self, from: d)) ?? []

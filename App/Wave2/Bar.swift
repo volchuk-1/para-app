@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Every screen the bar can open.
 enum Page: String, Hashable {
-    case home, archive, week, month, invites, watch, books, wishes, me, finance, games, money, evening, cinema, cal
+    case home, archive, week, month, invites, watch, books, wishes, me, finance, games, money, evening, cinema, cal, pomo, stats
 }
 
 /// One group of the bar: a circle at rest, a pill when it is where you are, a sub-menu on the second tap.
@@ -37,7 +37,17 @@ struct WaveBar: View {
     @State private var lastPick: [String: Page] = [:]
     @State private var width: CGFloat = 360
     @State private var foldTicket = 0
+    @State private var extrasFor: String?
+    @State private var extraHot: Page?
+    @State private var extraFrames: [Page: CGRect] = [:]
+    @State private var holdTask: Task<Void, Never>?
     private let spring = Animation.spring(response: 0.48, dampingFraction: 0.72)
+    /// Pages that do not fit the row: a long press on the circle shows them above it.
+    private let extras: [String: [(Page, String, String)]] = [
+        "together": [(.pomo, "timer", "Помодоро"), (.stats, "chart.bar.fill", "Статистика")],
+        "me": [(.stats, "chart.bar.fill", "Статистика"), (.pomo, "timer", "Помодоро")],
+        "calendar": [(.pomo, "timer", "Помодоро"), (.stats, "chart.bar.fill", "Статистика")],
+    ]
 
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
@@ -105,13 +115,55 @@ struct WaveBar: View {
                             .transition(AnyTransition.slideOut.animation(spring.delay(0.045 * Double(s.subs.count - 1 - i))))
                     }
                 }
-                Button { tap(s) } label: { item(s) }
-                    .buttonStyle(.plain)
+                item(s)
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                        .onChanged { v in
+                            if holdTask == nil && extrasFor == nil, extras[s.id] != nil {
+                                holdTask = Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(420))
+                                    if !Task.isCancelled { withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) { extrasFor = s.id } }
+                                }
+                            }
+                            if extrasFor != nil { extraHot = extraFrames.first { $0.value.insetBy(dx: -6, dy: -6).contains(v.location) }?.key }
+                        }
+                        .onEnded { v in
+                            holdTask?.cancel(); holdTask = nil
+                            if extrasFor != nil {
+                                if let p = extraHot { page = p }
+                                withAnimation(.snappy) { extrasFor = nil }
+                                extraHot = nil
+                            } else if abs(v.translation.width) < 12 && abs(v.translation.height) < 12 {
+                                tap(s)
+                            }
+                        })
             }
         }
         .padding(7)
         .background(Theme.paper, in: Capsule())
         .shadow(color: .black.opacity(0.16), radius: 16, y: 10)
+        .overlay(alignment: .topTrailing) {
+            if let k = extrasFor, let ex = extras[k] {
+                HStack(spacing: 8) {
+                    ForEach(ex, id: \.0) { e in
+                        VStack(spacing: 1) {
+                            Image(systemName: e.1).font(.system(size: 20, weight: .semibold))
+                            Text(e.2).font(.system(size: 9, weight: .bold))
+                        }
+                        .frame(width: 60, height: 60)
+                        .background(extraHot == e.0 ? Theme.olive : Theme.tan, in: Circle())
+                        .foregroundStyle(extraHot == e.0 ? Theme.cream : Theme.olive)
+                        .scaleEffect(extraHot == e.0 ? 1.14 : 1)
+                        .background(GeometryReader { g in Color.clear.onAppear { extraFrames[e.0] = g.frame(in: .global) }.onChange(of: g.frame(in: .global)) { _, f in extraFrames[e.0] = f } })
+                    }
+                }
+                .padding(8).background(Theme.paper, in: Capsule()).shadow(color: .black.opacity(0.2), radius: 18, y: 10)
+                .offset(y: -84)
+                .transition(.scale(scale: 0.6, anchor: .bottomTrailing).combined(with: .opacity))
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: extraHot)
+            }
+        }
+        .sensoryFeedback(.selection, trigger: extraHot)
+        .sensoryFeedback(.impact(weight: .medium), trigger: extrasFor)
     }
 
     private func item(_ s: BarSection) -> some View {
@@ -135,7 +187,7 @@ struct WaveBar: View {
     private func subItem(_ x: BarSub) -> some View {
         let on = x.page != nil && x.page == page
         return VStack(spacing: 2) {
-            Image(systemName: x.icon).font(.system(size: 18, weight: .semibold)).scaleEffect(on ? 1.08 : 1)
+            Group { if x.icon == "piggy" { PiggyIcon().frame(width: 22, height: 18) } else { Image(systemName: x.icon).font(.system(size: 18, weight: .semibold)) } }.scaleEffect(on ? 1.08 : 1)
             if !compact || on { Text(x.label).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75) }
         }
         .frame(width: subWidth(x), height: 46)
@@ -218,5 +270,25 @@ struct BellButton: View {
         }
         .foregroundStyle(Theme.ink)
         .accessibilityLabel(unread > 0 ? "Сповіщення: \(unread)" : "Сповіщення")
+    }
+}
+
+
+/// A piggy bank (SF Symbols has none): body, ear, snout, legs and a coin slot.
+struct PiggyIcon: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            var body = Path(ellipseIn: CGRect(x: w * 0.08, y: h * 0.18, width: w * 0.78, height: h * 0.62))
+            body.addPath(Path(roundedRect: CGRect(x: w * 0.8, y: h * 0.36, width: w * 0.18, height: h * 0.24), cornerRadius: w * 0.05))
+            body.addPath(Path(roundedRect: CGRect(x: w * 0.2, y: h * 0.68, width: w * 0.12, height: h * 0.3), cornerRadius: 1.5))
+            body.addPath(Path(roundedRect: CGRect(x: w * 0.58, y: h * 0.68, width: w * 0.12, height: h * 0.3), cornerRadius: 1.5))
+            var ear = Path()
+            ear.move(to: CGPoint(x: w * 0.56, y: h * 0.24)); ear.addLine(to: CGPoint(x: w * 0.66, y: 0)); ear.addLine(to: CGPoint(x: w * 0.76, y: h * 0.3)); ear.closeSubpath()
+            body.addPath(ear)
+            ctx.fill(body, with: .foreground)
+            ctx.fill(Path(roundedRect: CGRect(x: w * 0.36, y: h * 0.26, width: w * 0.2, height: h * 0.07), cornerRadius: 1), with: .color(Theme.paper))
+            ctx.fill(Path(ellipseIn: CGRect(x: w * 0.66, y: h * 0.38, width: w * 0.06, height: w * 0.06)), with: .color(Theme.paper))
+        }
     }
 }
