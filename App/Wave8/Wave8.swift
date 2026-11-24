@@ -281,7 +281,7 @@ struct Coin3DView: View {
                 Spacer()
                 ZStack {
                     Ellipse().fill(RadialGradient(colors: [.black.opacity(0.55), .clear], center: .center, startRadius: 2, endRadius: 80))
-                        .frame(width: 160, height: 22).scaleEffect(1 - lift / 600).opacity(1 - lift / 700).offset(y: 120)
+                        .frame(width: 160, height: 22).scaleEffect(CGFloat(1) - lift / CGFloat(600)).opacity(Double(1 - lift / 700)).offset(y: 120)
                     coin.offset(y: -lift)
                 }
                 .frame(height: 320)
