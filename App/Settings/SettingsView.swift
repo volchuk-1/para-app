@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// Settings in two groups: «Звичайні» (what you change for yourself) and «Системні» (code, keys, server).
 struct SettingsView: View {
@@ -19,6 +20,7 @@ struct SettingsView: View {
     @State private var template = "where"
     @State private var mix = false
     @State private var confirmSpotOff = false
+    @State private var avatarPick: PhotosPickerItem?
 
     var body: some View {
         NavigationStack {
@@ -45,6 +47,7 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $people) { PeopleSheet() }
             .sheet(isPresented: $mix) { MixSheet() }
+            .onChange(of: avatarPick) { _, p in Task { await setAvatar(p) } }
             .confirmationDialog("Відключити Spotify? Віджет перестане показувати твою музику.", isPresented: $confirmSpotOff, titleVisibility: .visible) {
                 Button("Відключити", role: .destructive) { Task { try? await API.current().spotifyOff(); spot = try? await API.current().spotifyConnect() } }
             }
@@ -58,6 +61,24 @@ struct SettingsView: View {
     // MARK: Звичайні
 
     @ViewBuilder private var usual: some View {
+        Section {
+            HStack(spacing: 14) {
+                Group {
+                    if let u = state.me?.avatarUrl { AuthImage(url: u) }
+                    else { Text(String(state.me?.name.prefix(1) ?? "?")).font(.serif(26, .bold)).frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.coffee).foregroundStyle(Theme.cream) }
+                }
+                .frame(width: 64, height: 64).clipShape(Circle())
+                VStack(alignment: .leading, spacing: 6) {
+                    PhotosPicker(selection: $avatarPick, matching: .images) {
+                        Text(state.me?.avatarUrl == nil ? "Додати фото" : "Змінити фото").font(.system(size: 15, weight: .semibold))
+                    }
+                    if state.me?.avatarUrl != nil {
+                        Button("Прибрати", role: .destructive) { Task { try? await API.current().deleteAvatar(); if var m = state.me { m.avatarUrl = nil; state.renamed(m) } } }
+                            .font(.system(size: 14)).buttonStyle(.plain).foregroundStyle(Color(hex: 0xC0453A))
+                    }
+                }
+            }
+        } header: { Text("Фото профілю") } footer: { Text("Його бачите ви обоє — в навбарі й на Головній.") }
         Section {
             TextField("Ім'я", text: $name)
             // only when the name was changed
@@ -157,6 +178,19 @@ struct SettingsView: View {
         Section {
             Button("Вийти з цього телефона", role: .destructive) { confirmSignOut = true }
         }
+    }
+
+    /// A square crop of the photo, 600 pt, stored encrypted on the server.
+    private func setAvatar(_ p: PhotosPickerItem?) async {
+        guard let p, let data = try? await p.loadTransferable(type: Data.self), let img = UIImage(data: data) else { return }
+        let side = min(img.size.width, img.size.height)
+        let crop = CGRect(x: (img.size.width - side) / 2, y: (img.size.height - side) / 2, width: side, height: side)
+        let square = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600)).image { _ in
+            img.draw(in: CGRect(x: -crop.minX * 600 / side, y: -crop.minY * 600 / side, width: img.size.width * 600 / side, height: img.size.height * 600 / side))
+        }
+        guard let jpeg = square.jpegData(compressionQuality: 0.86) else { return }
+        do { state.renamed(try await API.current().uploadAvatar(jpeg)); message = "Фото оновлено"; Haptic.ok() }
+        catch { message = error.localizedDescription }
     }
 
     private var laptopNote: String {

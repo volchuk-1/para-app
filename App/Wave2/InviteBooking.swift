@@ -23,7 +23,7 @@ struct InviteBooking: View {
     @State private var busy = false
     @State private var error: String?
 
-    private let acts: [(String, String, String)] = [("cinema", "film.fill", "Кіно"), ("dinner", "fork.knife", "Вечеря"), ("walk", "tree.fill", "Прогулянка"), ("own", "sparkles", "Своє")]
+    private let acts: [(String, String, String)] = [("cinema", "film.fill", "Кіно"), ("dinner", "fork.knife", "Вечеря"), ("walk", "shoeprints.fill", "Прогулянка"), ("own", "sparkles", "Своє")]
     private var cal: Calendar { Dock.calendar }
     /// What is on at Multiplex now (sessions still ahead), our ♥ first, then films from our list; a film opened
     /// from «Дивимось» that is not on comes too, without sessions.
@@ -283,7 +283,8 @@ struct InviteBooking: View {
     private func setup() async {
         switch start {
         case .film(let id): pick = "cinema"; filmId = id
-        case .day(let d): pick = "dinner"; day = d
+        // the first choice is highlighted (it used to be «Вечеря» when opened from a day)
+        case .day(let d): pick = "cinema"; day = d
         case .blank: pick = "cinema"
         }
         let today = Evening.iso(Date())

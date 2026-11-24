@@ -12,6 +12,8 @@ struct PomodoroPage: View {
     @State private var minutes: Int? = 25
     @State private var together = false
     @State private var busy = false
+    @State private var presets: [PomoPreset] = []
+    @State private var newPreset = false
     private let acts: [(String, String)] = [("Читання", "book.fill"), ("Робота", "briefcase.fill"), ("Спорт", "figure.run"), ("Англійська", "character.bubble.fill"), ("Прибирання", "sparkles"), ("Навчання", "graduationcap.fill")]
     private let bg = Color(hex: 0x141210)
 
@@ -33,6 +35,20 @@ struct PomodoroPage: View {
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
+                            // my own activities: one tap — the timer goes with its minutes
+                            ForEach(presets, id: \.key) { pr in
+                                Button { Task { await start(pr) } } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: pr.symbol)
+                                        Text(pr.name)
+                                        Text("\(pr.minutes) хв ▶").font(.system(size: 11.5)).opacity(0.8)
+                                    }
+                                    .font(.system(size: 14, weight: .semibold)).padding(.horizontal, 15).frame(height: 40)
+                                    .background(Theme.olive, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu { Button("Прибрати", role: .destructive) { Task { await save(presets.filter { $0.key != pr.key }) } } }
+                            }
                             ForEach(acts, id: \.0) { a in
                                 Button { act = a.0 } label: {
                                     Label(a.0, systemImage: a.1).font(.system(size: 14, weight: .semibold)).padding(.horizontal, 15).frame(height: 40)
@@ -40,6 +56,11 @@ struct PomodoroPage: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+                            Button { newPreset = true } label: {
+                                Label("Своє", systemImage: "plus").font(.system(size: 14, weight: .semibold)).padding(.horizontal, 15).frame(height: 40)
+                                    .background(Color(hex: 0x25221F), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     rulerLabel("Години", "\(hours ?? 0)")
@@ -64,7 +85,11 @@ struct PomodoroPage: View {
         }
         .background(bg.ignoresSafeArea())
         .foregroundStyle(Color(hex: 0xF3EEE6))
-        .task { pair = try? await API.current().pomo() }
+        .task {
+            pair = try? await API.current().pomo()
+            presets = (try? await API.current().pomoPresets()) ?? presets
+        }
+        .sheet(isPresented: $newPreset) { PresetSheet { pr in Task { await save(presets + [pr]) } } }
         .sensoryFeedback(.impact(flexibility: .rigid, intensity: 1), trigger: hours)
         .sensoryFeedback(.impact(flexibility: .rigid, intensity: 0.8), trigger: minutes)
     }
@@ -136,6 +161,20 @@ struct PomodoroPage: View {
             LiveTasks.add(id: "pomo", title: "🍅 \(act)", start: Date(), end: me.endsAt)
         }
     }
+    /// A preset of my own starts at once — its name and its minutes.
+    private func start(_ pr: PomoPreset) async {
+        busy = true; defer { busy = false }
+        if let me = try? await API.current().startPomo(pr.name, minutes: pr.minutes, together: false) {
+            Haptic.hit(.heavy)
+            pair = PomoPair(me: me, partner: pair?.partner)
+            LiveTasks.add(id: "pomo", title: "🍅 \(pr.name)", start: Date(), end: me.endsAt)
+        }
+    }
+
+    private func save(_ list: [PomoPreset]) async {
+        if let r = try? await API.current().savePomoPresets(list) { presets = r; Haptic.ok() }
+    }
+
     private func pause() async {
         busy = true; defer { busy = false }
         let me = try? await API.current().pausePomo()
@@ -336,4 +375,46 @@ struct YouTubeView: UIViewRepresentable {
         return w
     }
     func updateUIView(_ v: WKWebView, context: Context) {}
+}
+
+/// «+ Своє»: a name, minutes and an icon — saved as a button in pomodoro.
+struct PresetSheet: View {
+    var saved: (PomoPreset) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var minutes = 25
+    @State private var icon = "sparkle"
+
+    var body: some View {
+        NavigationStack {
+            SoftForm {
+                Section {
+                    TextField("Назва: гітара, код, медитація…", text: $name)
+                    Stepper("\(minutes) хв", value: $minutes, in: 5...300, step: 5)
+                } footer: { Text("Збережеться кнопкою в помодоро: один тап — і таймер іде. Прибрати — затиснути кнопку.") }
+                Section("Іконка") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
+                        ForEach(PomoPreset.icons, id: \.self) { ic in
+                            let pr = PomoPreset(name: "", icon: ic, minutes: 1)
+                            Button { icon = ic; Haptic.hit(.light) } label: {
+                                Image(systemName: pr.symbol).font(.system(size: 18)).frame(maxWidth: .infinity).frame(height: 40)
+                                    .background(icon == ic ? Theme.olive : Theme.paper, in: RoundedRectangle(cornerRadius: 12))
+                                    .foregroundStyle(icon == ic ? Theme.cream : Theme.olive)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Своя справа").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Закрити") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Зберегти") { saved(PomoPreset(name: name.trimmingCharacters(in: .whitespaces), icon: icon, minutes: minutes)); dismiss() }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .tint(Theme.olive)
+    }
 }

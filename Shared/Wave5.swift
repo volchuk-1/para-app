@@ -49,6 +49,20 @@ struct MixState: Codable { let url: String?; let count: Int; let updatedAt: Date
 struct MixSide: Codable { var name: String? = nil; let linked: Bool; let mix: Bool }
 struct MixInfo: Codable { let ready: Bool; let mix: MixState?; let me: MixSide; let partner: MixSide? }
 struct MixResult: Codable { let mix: MixState?; let both: Bool }
+/// My own activity in pomodoro: one tap starts the timer with its minutes.
+struct PomoPreset: Codable, Hashable, Identifiable {
+    var id: String? = nil
+    let name: String; let icon: String; let minutes: Int
+    var key: String { id ?? name }
+    /// The server keeps Phosphor icon names (for the Telegram version); here — the SF Symbol of the same meaning.
+    var symbol: String {
+        ["book": "book.fill", "briefcase": "briefcase.fill", "barbell": "dumbbell.fill", "translate": "character.bubble.fill", "broom": "sparkles",
+         "graduation-cap": "graduationcap.fill", "code": "chevron.left.forwardslash.chevron.right", "music-note": "music.note", "paint-brush": "paintbrush.fill",
+         "heart": "heart.fill", "leaf": "leaf.fill", "coffee": "cup.and.saucer.fill", "person-simple-walk": "figure.walk", "sparkle": "sparkles"][icon] ?? "sparkles"
+    }
+    static let icons = ["book", "briefcase", "barbell", "translate", "broom", "graduation-cap", "code", "music-note", "paint-brush", "heart", "leaf", "coffee", "person-simple-walk", "sparkle"]
+}
+struct PresetsResult: Decodable { let presets: [PomoPreset] }
 struct AlbumPhoto: Codable, Hashable, Identifiable { let id: String; let url: String?; let takenAt: Date?; let lat: Double?; let lon: Double?; let place: String?; let temp: Int?; var note: String? = nil }
 struct AlbumPlace: Codable, Hashable, Identifiable {
     let place: String?; let lat: Double?; let lon: Double?; let count: Int
@@ -104,6 +118,12 @@ extension API {
     func trailer(tmdbId: Int, mediaType: String) async throws -> Trailer? { (try await get("/trailer?tmdbId=\(tmdbId)&mediaType=\(mediaType)") as TrailerResult).trailer }
     func spotifyNow() async throws -> SpotNow { try await get("/spotify/now") }
     func spotifyConnect() async throws -> SpotConnect { try await get("/spotify/connect") }
+    struct MemberResult: Decodable { let me: Member }
+    func uploadAvatar(_ jpeg: Data) async throws -> Member { (try await upload("/me/avatar", jpeg: jpeg) as MemberResult).me }
+    func deleteAvatar() async throws { try await delete("/me/avatar") }
+    struct PresetsBody: Encodable { let presets: [PomoPreset] }
+    func pomoPresets() async throws -> [PomoPreset] { (try await get("/pomo/presets") as PresetsResult).presets }
+    func savePomoPresets(_ p: [PomoPreset]) async throws -> [PomoPreset] { (try await send("PUT", "/pomo/presets", PresetsBody(presets: p)) as PresetsResult).presets }
     func spotifyMix() async throws -> MixInfo { try await get("/spotify/mix") }
     func buildMix() async throws -> MixResult { try await send("POST", "/spotify/mix", Empty()) }
     func spotifyOff() async throws { try await delete("/spotify") }

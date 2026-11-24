@@ -251,7 +251,8 @@ struct WatchSearchView: View {
             // suggestions while typing: a short pause after the last letter; a newer letter cancels the older search
             .task(id: query) {
                 let q = query.trimmingCharacters(in: .whitespaces)
-                guard q.count >= 2 else { if q.isEmpty { results = [] }; return }
+                // an empty field (after adding a film) is not «nothing found»
+                guard q.count >= 2 else { if q.isEmpty { results = []; searched = false }; return }
                 try? await Task.sleep(for: .milliseconds(230))
                 if Task.isCancelled { return }
                 await search()
@@ -280,6 +281,7 @@ struct WatchSearchView: View {
         // from a shared link there is one film to add; from search the next one can follow at once
         if sourceUrl != nil { dismiss(); return }
         lastAdded = c.title
+        searched = false
         query = ""
         results = []
     }

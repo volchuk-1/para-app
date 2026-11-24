@@ -14,6 +14,7 @@ struct BarSection: Identifiable, Equatable {
     let note: String
     let start: Page
     let subs: [BarSub]
+    var photo: String? = nil
 }
 
 struct BarSub: Identifiable, Equatable {
@@ -198,7 +199,10 @@ struct WaveBar: View {
         let size = on ? 44 : small
         return ZStack {
             Circle().fill(on ? Theme.olive : Theme.tan)
-            if let a = s.avatar {
+            if let ph = s.photo {
+                AuthImage(url: ph).frame(width: 34, height: 34).clipShape(Circle())
+                    .scaleEffect(on || !open ? 1 : 0.84)
+            } else if let a = s.avatar {
                 Text(a).font(.serif(15, .bold)).frame(width: 34, height: 34)
                     .background(Theme.coffee, in: Circle()).foregroundStyle(Theme.cream)
                     .scaleEffect(on || !open ? 1 : 0.84)

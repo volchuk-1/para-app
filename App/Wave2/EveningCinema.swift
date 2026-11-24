@@ -238,7 +238,7 @@ struct ReplySheet: View {
     @State private var pick: String?
     @State private var own = ""
     @State private var error: String?
-    private let acts = [("Вечеря", "fork.knife"), ("Прогулянка", "tree.fill"), ("Кава", "cup.and.saucer.fill"), ("Фільм удома", "tv.fill"), ("Кіно", "film.fill"), ("Своє", "sparkles")]
+    private let acts = [("Вечеря", "fork.knife"), ("Прогулянка", "shoeprints.fill"), ("Кава", "cup.and.saucer.fill"), ("Фільм удома", "tv.fill"), ("Кіно", "film.fill"), ("Своє", "sparkles")]
     private let reasons = ["Хочу побути сам(а)", "Втомився(лась)", "Іншим разом"]
 
     var body: some View {

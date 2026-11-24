@@ -4,6 +4,8 @@ struct Member: Codable, Equatable, Identifiable, Hashable {
     let id: String
     var name: String
     let role: String
+    /// My photo instead of the letter (a protected file of the couple).
+    var avatarUrl: String? = nil
 }
 
 /// Answer of `POST /pair/create` (has a code for the partner) and `POST /pair/join` (no code).

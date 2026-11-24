@@ -67,7 +67,8 @@ struct MainView: View {
             BarSection(id: "me", icon: nil, avatar: String(state.me?.name.prefix(1) ?? "Я"), label: state.me?.name ?? "Я", note: "", start: .home,
                        subs: [BarSub(id: "home", icon: "house.fill", label: "Головна", page: .home)]
                        + (moneyOn ? [BarSub(id: "money", icon: "wallet.pass.fill", label: "Гроші", page: .money)] : [])
-                       + [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil)]),
+                       + [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil)],
+                       photo: state.me?.avatarUrl),
             BarSection(id: "calendar", icon: "calendar", avatar: nil, label: "Календар", note: "", start: .cal,
                        subs: [BarSub(id: "cal", icon: "calendar", label: "Календар", page: .cal),
                               BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites),
