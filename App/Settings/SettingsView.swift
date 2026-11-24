@@ -14,6 +14,9 @@ struct SettingsView: View {
     @State private var scriptKey: String?
     @State private var people = false
     @State private var spot: SpotConnect?
+    @State private var remote: RemoteInfo?
+    @State private var laptopKey: String?
+    @State private var template = "where"
 
     var body: some View {
         NavigationStack {
@@ -33,7 +36,11 @@ struct SettingsView: View {
             .navigationTitle("Налаштування")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
             .onAppear { name = state.me?.name ?? "" }
-            .task { spot = try? await API.current().spotifyConnect() }
+            .task {
+                spot = try? await API.current().spotifyConnect()
+                remote = try? await API.current().remote()
+                template = remote?.template ?? "where"
+            }
             .sheet(isPresented: $people) { PeopleSheet() }
             .confirmationDialog("Вийти? Повернутись можна лише з новим кодом від партнера.", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Вийти", role: .destructive) { state.signOut(); dismiss() }
@@ -92,6 +99,28 @@ struct SettingsView: View {
         } header: { Text("Віджет «Витрати»") } footer: {
             Text("Щоб твої витрати й борг ішли в «Мої гроші». Встав ключ у Scriptable: «Витрати» → «🔗 Підключити DaVincit». Бачиш це лише ти; новий ключ вимикає старий.")
         }
+        Section {
+            if let laptopKey {
+                Text(laptopKey).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                Button("Скопіювати ключ") { UIPasteboard.general.string = laptopKey; message = "Скопійовано — встав у вікно програми на ноутбуці" }
+            } else {
+                Button(remote?.connected == true ? "Новий ключ для ноутбука" : "Ключ для ноутбука") {
+                    Task { laptopKey = try? await API.current().remoteKey(); remote = try? await API.current().remote() }
+                }
+            }
+            if remote?.connected == true {
+                Picker("Де відкривати фільм", selection: Binding(get: { template }, set: { v in template = v; Task { try? await API.current().remoteTemplate(v) } })) {
+                    Text("Де дивитись (TMDB)").tag("where")
+                    Text("Netflix").tag("netflix")
+                    Text("MEGOGO").tag("megogo")
+                    Text("Apple TV").tag("appletv")
+                    Text("YouTube").tag("youtube")
+                    if !["where", "netflix", "megogo", "appletv", "youtube"].contains(template) { Text("Свій сайт").tag(template) }
+                }
+            }
+        } header: { Text("Ноутбук") } footer: {
+            Text(laptopNote)
+        }
         Section("Сповіщення") {
             NavigationLink("Перевірити push і віджети") { DiagnosticsView() }
         }
@@ -113,6 +142,11 @@ struct SettingsView: View {
         Section {
             Button("Вийти з цього телефона", role: .destructive) { confirmSignOut = true }
         }
+    }
+
+    private var laptopNote: String {
+        guard remote?.connected == true else { return "Щоб кнопка «На ноутбук» на сторінці фільму відкривала його там. Ключ вставляється у вікно програми «DaVincit — ноутбук»; показую один раз." }
+        return (remote?.online == true ? "Зараз на зв'язку. " : "Програма на ноутбуці зараз не запущена. ") + "Кнопка «На ноутбук» — на сторінці фільму."
     }
 
     private func newScriptKey() async {

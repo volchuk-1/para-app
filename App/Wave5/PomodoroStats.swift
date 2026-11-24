@@ -4,6 +4,7 @@ import WebKit
 // MARK: - Помодоро: arc of ticks, hours and minutes on two horizontal rulers; the partner sees it
 
 struct PomodoroPage: View {
+    var onClose: () -> Void = {}
     @EnvironmentObject var state: AppState
     @State private var pair: PomoPair?
     @State private var act = "Читання"
@@ -17,8 +18,12 @@ struct PomodoroPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                Button { Haptic.hit(.medium); onClose() } label: {
+                    Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).frame(width: 44, height: 44).background(Color.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
                 Text("Помодоро").font(.serif(30, .bold))
-                Text("Обираєш справу й час. \(state.partner?.name ?? "") бачить, чим ти зайнятий, на дашборді й у кубику; поки йде — оливковий острівець.").font(.system(size: 13.5)).opacity(0.6)
+                Text("Обираєш справу й час. \(state.partner?.name ?? "") бачить, чим ти зайнятий, на головній; поки йде — оливковий острівець.").font(.system(size: 13.5)).opacity(0.6)
                 TimelineView(.periodic(from: .now, by: 1)) { _ in gauge }
                 if let me = pair?.me {
                     HStack(spacing: 8) {
@@ -39,8 +44,7 @@ struct PomodoroPage: View {
                     }
                     rulerLabel("Години", "\(hours ?? 0)")
                     Ruler(maxValue: 5, step: 1, value: $hours)
-                    rulerLabel("Хвилини", String(format: "%02d", minutes ?? 0))
-                    Ruler(maxValue: 59, step: 5, value: $minutes)
+                    Text("Хвилини — веди пальцем по дузі вгорі.").font(.system(size: 12.5)).opacity(0.55)
                     Toggle("Разом із \(state.partner?.name ?? "") — покличу в боті", isOn: $together).tint(Theme.olive).font(.system(size: 14)).padding(.top, 4)
                     bigButton("Почати", "play.fill", filled: true) { await start() }.padding(.top, 4)
                 }
@@ -69,9 +73,10 @@ struct PomodoroPage: View {
         let me = pair?.me
         let total = me.map { Double($0.total) } ?? Double(((hours ?? 0) * 60 + (minutes ?? 0)) * 60)
         let left = me.map { Double($0.leftNow) } ?? total
-        let frac = total > 0 ? left / total : 1
+        // running: how much is left; choosing: the minutes picked on the arc (0 … 60)
+        let frac = me != nil ? (total > 0 ? left / total : 1) : Double(minutes ?? 0) / 60
         return VStack(spacing: 0) {
-            HStack { Text((me?.activity ?? act).uppercased()).font(.system(size: 13, weight: .semibold)); Spacer(); Text(me == nil ? "ГОТОВО" : me!.paused ? "ПАУЗА" : me!.together ? "РАЗОМ" : "ФОКУС").font(.system(size: 13)) }
+            HStack { Text((me?.activity ?? act).uppercased()).font(.system(size: 13, weight: .semibold)); Spacer(); Text(me == nil ? "ВЕДИ ПО ДУЗІ" : me!.paused ? "ПАУЗА" : me!.together ? "РАЗОМ" : "ФОКУС").font(.system(size: 13)).opacity(me == nil ? 0.6 : 1) }
             ZStack(alignment: .bottom) {
                 Canvas { ctx, size in
                     let n = 46, cx = size.width / 2, cy = size.height - 4, r2 = min(size.width / 2 - 6, size.height - 10), r1 = r2 * 0.7
@@ -91,11 +96,27 @@ struct PomodoroPage: View {
                     ctx.stroke(needle, with: .color(.white), style: StrokeStyle(lineWidth: 4, lineCap: .round))
                 }
                 .frame(height: 170)
+                .overlay {
+                    if me == nil {
+                        GeometryReader { g in
+                            Color.clear.contentShape(Rectangle())
+                                .highPriorityGesture(DragGesture(minimumDistance: 0).onChanged { v in pickMinutes(v.location, g.size) })
+                        }
+                    }
+                }
                 Text(String(format: "%d:%02d", Int(left) / 60, Int(left) % 60)).font(.system(size: 38, weight: .semibold)).monospacedDigit().padding(.bottom, 26)
             }
-            HStack { Text("0 хв").foregroundStyle(Color(hex: 0x9DB27F)); Spacer(); Text("\(Int(total / 60)) хв").foregroundStyle(Theme.sand) }.font(.system(size: 14))
+            HStack { Text("0 хв").foregroundStyle(Color(hex: 0x9DB27F)); Spacer(); Text(me == nil ? "60 хв" : "\(Int(total / 60)) хв").foregroundStyle(Theme.sand) }.font(.system(size: 14))
         }
         .padding(16).background(.black, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+
+    /// A finger on the arc sets the minutes: the left end is 0, the right end 60.
+    private func pickMinutes(_ at: CGPoint, _ size: CGSize) {
+        let x = Double(at.x - size.width / 2), y = Double(size.height - 4 - at.y)
+        let angle = atan2(max(0, y), x)
+        let m = max(0, min(59, Int(((1 - angle / Double.pi) * 60).rounded())))
+        if m != minutes { minutes = m }
     }
 
     private func rulerLabel(_ t: String, _ v: String) -> some View {

@@ -23,9 +23,8 @@ enum WidgetKind {
     static let all: [(String, String, String)] = [
         ("event", "Подія", "calendar"), ("evening", "Вечір", "moon.stars"), ("film", "Фільм", "film"),
         ("turn", "Чия черга обирати фільм", "arrow.left.arrow.right"), ("pomodoro", "Помодоро", "timer"),
-        ("note", "Записка", "note.text"), ("mood", "Настрій", "face.smiling"), ("coin", "Монетка", "circle.circle"),
+        ("note", "Записка", "note.text"), ("coin", "Монетка", "circle.circle"),
         ("jar", "Банка", "banknote"), ("memory", "Спогад", "photo"), ("spotify", "Spotify", "music.note"),
-        ("touch", "Думаю про тебе", "heart"),
     ]
     /// standard background and text colour of a face
     static func palette(_ f: String) -> (Color, Color) {
@@ -74,9 +73,11 @@ struct WidgetGrid: View {
     let layout: [DashWidget]
     let d: Dashboard
     let spot: SpotNow?
+    var spotAt: Date = Date()
     var onTap: (String) -> Void
     var onEdit: (DashWidget) -> Void
     var onTouch: (String) -> Void
+    var onQuick: (String, String, String) -> Void = { _, _, _ in }
     private let gap: CGFloat = 10
 
     var body: some View {
@@ -86,7 +87,7 @@ struct WidgetGrid: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: gap) {
                     ForEach(row) { w in
-                        WidgetCube(w: w, d: d, spot: spot, onTap: onTap, onEdit: { onEdit(w) }, onTouch: onTouch)
+                        WidgetCube(w: w, d: d, spot: spot, spotAt: spotAt, onTap: onTap, onEdit: { onEdit(w) }, onTouch: onTouch, onQuick: onQuick)
                             .frame(width: w.size == "s" ? side : full, height: w.size == "l" ? side * 2 + gap : side)
                             .id(w)
                     }
@@ -110,17 +111,20 @@ struct WidgetGrid: View {
     }
 }
 
-/// One widget. Several faces — a cube: a swipe turns it a quarter to the next face.
+/// One widget. Several faces make a stack that flips like Apple's Smart Stack: a swipe up or down slides the face
+/// away (it shrinks a little) and the next one in; the dots on the side show only while it moves.
 struct WidgetCube: View {
     let w: DashWidget
     let d: Dashboard
     let spot: SpotNow?
+    var spotAt: Date = Date()
     var onTap: (String) -> Void
     var onEdit: () -> Void
     var onTouch: (String) -> Void
+    var onQuick: (String, String, String) -> Void = { _, _, _ in }
     @State private var idx = 0
-    @State private var turn: CGFloat = 0
-    @State private var dir: CGFloat = 1
+    @State private var drag: CGFloat = 0
+    @State private var showDots = false
     @State private var fin: Finance4?
     @State private var today: DayPlan?
     @State private var flipped = false
@@ -136,23 +140,25 @@ struct WidgetCube: View {
 
     var body: some View {
         GeometryReader { g in
-            let width = g.size.width
-            let next = (idx + Int(dir) + faces.count) % faces.count
+            let h = g.size.height + 12
+            // −1: the next face is fully in; +1: the previous one
+            let p = max(-1, min(1, drag / h))
             ZStack {
-                if turn > 0 {
-                    face(faces[next], index: next)
-                        .rotation3DEffect(.degrees(Double(dir * 90 * (1 - turn))), axis: (x: 0, y: 1, z: 0), anchor: dir > 0 ? .leading : .trailing, perspective: 0.6)
-                        .offset(x: dir * width * (1 - turn))
+                if faces.count > 1, p != 0 {
+                    other(p, h)
                 }
                 face(cur, index: idx)
-                    .rotation3DEffect(.degrees(Double(-dir * 90 * turn)), axis: (x: 0, y: 1, z: 0), anchor: dir > 0 ? .trailing : .leading, perspective: 0.6)
-                    .offset(x: -dir * width * turn)
+                    .scaleEffect(1 - 0.12 * abs(p))
+                    .opacity(1 - 0.4 * abs(p))
+                    .offset(y: p * h)
             }
             .frame(width: g.size.width, height: g.size.height)
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(alignment: .trailing) { if faces.count > 1 { sideDots.opacity(showDots ? 1 : 0) } }
             .contentShape(Rectangle())
             .onTapGesture { tap() }
             .onLongPressGesture(minimumDuration: 0.45) { Haptic.hit(.heavy); onEdit() }
-            .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { v in swipe(v.translation) })
+            .highPriorityGesture(stackDrag(h), including: faces.count > 1 ? .all : .subviews)
         }
         .task {
             if faces.contains("jar") { fin = try? await API.current().finance4() }
@@ -163,13 +169,55 @@ struct WidgetCube: View {
         }
     }
 
-    private func swipe(_ t: CGSize) {
-        guard faces.count > 1, turn == 0, abs(t.width) > 36, abs(t.width) > abs(t.height) * 1.5 else { return }
-        dir = t.width < 0 ? 1 : -1
-        Haptic.hit(.heavy)
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) { turn = 1 } completion: {
-            idx = (idx + Int(dir) + faces.count) % faces.count
-            turn = 0
+    /// The face that comes in: from below when the finger goes up, from above when it goes down.
+    private func other(_ p: CGFloat, _ h: CGFloat) -> some View {
+        let i = p < 0 ? (idx + 1) % faces.count : (idx - 1 + faces.count) % faces.count
+        return face(faces[i], index: i)
+            .scaleEffect(0.88 + 0.12 * abs(p))
+            .offset(y: (p < 0 ? h : -h) + p * h)
+    }
+
+    private var sideDots: some View {
+        VStack(spacing: 4) {
+            ForEach(0..<faces.count, id: \.self) { i in
+                Circle().fill(Color.white.opacity(i == idx % faces.count ? 1 : 0.4)).frame(width: 5, height: 5)
+            }
+        }
+        .padding(.vertical, 5).padding(.horizontal, 3)
+        .background(Color.black.opacity(0.28), in: Capsule())
+        .padding(.trailing, 6)
+        .allowsHitTesting(false)
+    }
+
+    private func stackDrag(_ h: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { v in
+                guard drag != 0 || abs(v.translation.height) > abs(v.translation.width) else { return }
+                if !showDots { withAnimation(.easeOut(duration: 0.2)) { showDots = true } }
+                drag = v.translation.height
+            }
+            .onEnded { v in
+                guard drag != 0 else { return }
+                let far = abs(v.translation.height) > 44 || abs(v.predictedEndTranslation.height) > h * 0.6
+                let go = far ? (v.translation.height < 0 ? 1 : -1) : 0
+                if go == 0 {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { drag = 0 }
+                    hideDots()
+                    return
+                }
+                Haptic.hit(.heavy)
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { drag = CGFloat(-go) * h } completion: {
+                    idx = (idx + go + faces.count) % faces.count
+                    drag = 0
+                    hideDots()
+                }
+            }
+    }
+
+    private func hideDots() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(900))
+            if drag == 0 { withAnimation(.easeOut(duration: 0.3)) { showDots = false } }
         }
     }
 
@@ -195,7 +243,6 @@ struct WidgetCube: View {
         return ZStack(alignment: .topTrailing) {
             bg
             inner(f, fg: fg, ac: ac)
-            if faces.count > 1 { dots(index, fg) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -340,7 +387,7 @@ struct WidgetCube: View {
     private func quick(_ kind: String, _ label: String, _ t: DayPlan) -> some View {
         Button(label) {
             Haptic.hit(.medium)
-            Task { let from: String? = t.freeFrom; try? await API.current().quickEvening(kind, time: from ?? "19:30") }
+            onQuick(kind, label, t.freeFrom.isEmpty ? "19:30" : t.freeFrom)
         }
         .font(.system(size: 11.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
         .frame(maxWidth: .infinity).frame(height: 28).background(.white.opacity(0.2), in: Capsule())
@@ -448,32 +495,64 @@ struct WidgetCube: View {
 
     private func spotSide(_ side: SpotSide?, who: String, tint: Color) -> some View {
         let t = side?.track
-        let cover: CGFloat = big ? 150 : wide ? 66 : 48
         let state = side?.linked == false ? "не підключено" : t?.playing == true ? "зараз грає" : "останнє"
-        return ZStack(alignment: .bottomLeading) {
+        return ZStack {
             tint
             if let c = t?.cover {
                 Color.clear.overlay(RemoteImage(url: c).blur(radius: 40).scaleEffect(1.7).opacity(0.8)).clipped()
-                Color.black.opacity(0.28)
+                Color.black.opacity(0.3)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .top, spacing: 6) {
-                    Color.clear.overlay(RemoteImage(url: t?.cover)).frame(width: cover, height: cover)
-                        .clipShape(RoundedRectangle(cornerRadius: 8)).shadow(color: .black.opacity(0.4), radius: 10, y: 4)
-                    Spacer(minLength: 0)
-                    if t?.playing == true { Image(systemName: "waveform").symbolEffect(.variableColor.iterative).font(.system(size: 13, weight: .bold)).padding(.top, 4) }
-                    SpotifyGlyph().frame(width: 22, height: 22)
-                }
-                Spacer(minLength: 4)
-                Text("\(who) · \(state)".uppercased()).font(.system(size: 9.5, weight: .bold)).tracking(0.6).opacity(0.8).lineLimit(1).minimumScaleFactor(0.7)
-                Text(t?.title ?? "Нічого не грає").font(.system(size: big ? 22 : wide ? 18 : 14, weight: .bold)).lineLimit(1).minimumScaleFactor(0.8)
-                Text(t?.artist ?? "").font(.system(size: big ? 15 : 12.5)).opacity(0.85).lineLimit(1)
+            spotLayout(t, label: "\(who) · \(state)").padding(wide ? 14 : 12)
+        }
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 6) {
+                if t?.playing == true { Image(systemName: "waveform").symbolEffect(.variableColor.iterative).font(.system(size: 12, weight: .bold)) }
+                SpotifyGlyph().frame(width: 20, height: 20)
             }
-            .padding(wide ? 16 : 12)
+            .padding(12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .foregroundStyle(.white)
+    }
+
+    @ViewBuilder private func spotLayout(_ t: SpotTrack?, label: String) -> some View {
+        if w.size == "m" {
+            HStack(spacing: 0) {
+                spotArt(t).padding(.trailing, 44)
+                spotText(t, label: label)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                spotArt(t)
+                Spacer(minLength: 6)
+                spotText(t, label: label)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func spotArt(_ t: SpotTrack?) -> some View {
+        let side: CGFloat = big ? 150 : wide ? 116 : 60
+        let on = t?.playing == true
+        return ZStack {
+            VinylDisc(spinning: on).frame(width: side * 0.9, height: side * 0.9).offset(x: side * (on ? 0.4 : 0.26))
+            Color(hex: 0x333333).overlay(RemoteImage(url: t?.cover)).frame(width: side, height: side)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
+        }
+        .frame(width: side, height: side)
+        .animation(.spring(response: 0.6, dampingFraction: 0.7), value: on)
+    }
+
+    private func spotText(_ t: SpotTrack?, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased()).font(.system(size: 9.5, weight: .bold)).tracking(0.6).opacity(0.8).lineLimit(1).minimumScaleFactor(0.7)
+            Text(t?.title ?? "Нічого не грає").font(.system(size: big ? 24 : wide ? 17 : 14, weight: .bold)).lineLimit(1).minimumScaleFactor(0.8)
+            Text(t?.artist ?? "").font(.system(size: big ? 15 : 12.5)).opacity(0.85).lineLimit(1)
+            if let t, (t.duration ?? 0) > 0 { SpotProgress(track: t, at: spotAt, compact: !wide) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

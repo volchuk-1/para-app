@@ -66,7 +66,7 @@ struct HistoryFeed: View {
         case "memory":
             VStack(alignment: .leading, spacing: 0) {
                 if let p = it.photoUrl {
-                    AuthImage(url: p).frame(height: 230).frame(maxWidth: .infinity).clipped()
+                    Color.black.frame(height: 230).frame(maxWidth: .infinity).overlay { AuthImage(url: p) }.clipped()
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(it.title).font(.system(size: 17, weight: .semibold))

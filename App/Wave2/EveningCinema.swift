@@ -58,7 +58,8 @@ struct EveningPage: View {
         let answered = store.events.filter { $0.createdBy == state.me?.id && ($0.invitation?.replyNote?.isEmpty == false) && $0.startsAt > Date().addingTimeInterval(-86400) }
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                PageTitle(plain: "Наш", italic: "вечір", sub: "Хто вільний і що робимо. Створити може кожен — другий підтверджує.")
+                PageTitle(plain: "Наш", italic: "вечір", sub: "Сьогодні — зверху. Нижче — вільні вечори, які ще ніхто не спланував.")
+                if let t = days.first { tonight(t) } else { ProgressView().tint(Theme.olive).frame(maxWidth: .infinity).padding(20) }
                 ForEach(incoming) { e in
                     VStack(alignment: .leading, spacing: 4) {
                         Text("\(pn.uppercased()) ПРОПОНУЄ").font(.system(size: 11, weight: .bold)).tracking(1).opacity(0.85)
@@ -84,14 +85,9 @@ struct EveningPage: View {
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 }
-                VStack(spacing: 0) {
-                    ForEach(days) { d in dayRow(d) }
-                    if days.isEmpty { ProgressView().tint(Theme.olive).padding(20) }
-                }
-                .padding(.horizontal, 14)
-                .background(Theme.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                dayList("Вільні вечори попереду", days.dropFirst().filter { $0.isFree }, empty: days.isEmpty ? nil : "На два тижні вперед спільних вільних вечорів не видно. Перевір графік у календарі.")
+                dayList("Уже заплановано", days.dropFirst().filter { $0.status == "plan" }, empty: nil)
                 history
-                TripsBlock()
             }
             .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 130)
         }
@@ -122,12 +118,53 @@ struct EveningPage: View {
                 }
                 Spacer(minLength: 4)
                 if d.isFree {
-                    Button("Що робимо?") { invite = d.date }
+                    Button("Запланувати") { invite = d.date }
                         .font(.system(size: 13, weight: .semibold)).padding(.horizontal, 12).frame(height: 34).background(Theme.tan, in: Capsule())
                 }
             }
             .padding(.vertical, 10)
             Divider()
+        }
+    }
+
+    /// Tonight: one big card that says plainly what the evening is and what to do about it.
+    private func tonight(_ t: DayPlan) -> some View {
+        let pn = state.partner?.name ?? ""
+        let strong = t.status == "plan" || t.isFree
+        let bg: Color = t.status == "plan" ? Theme.coffee : t.isFree ? Theme.olive : Theme.paper
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(t.status == "plan" ? "СЬОГОДНІ ВВЕЧЕРІ · ВЖЕ Є ПЛАН" : "СЬОГОДНІ ВВЕЧЕРІ").font(.system(size: 11, weight: .bold)).tracking(1.5).opacity(0.7)
+            Text(tonightTitle(t)).font(.serif(27, .bold))
+            Text(t.isFree ? "Що робимо? Обери — \(pn) отримає запрошення." : Evening.note(t, partner: pn)).font(.system(size: 13.5)).opacity(0.85)
+            if t.isFree {
+                Button { invite = t.date } label: {
+                    Label("Запланувати вечір", systemImage: "sparkles").font(.system(size: 14, weight: .semibold))
+                        .padding(.horizontal, 16).frame(height: 40).background(Color.white.opacity(0.18), in: Capsule())
+                }
+                .buttonStyle(.plain).padding(.top, 8)
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(bg, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .foregroundStyle(strong ? Theme.cream : Theme.ink)
+    }
+
+    private func tonightTitle(_ t: DayPlan) -> String {
+        if t.status == "plan" { return t.plan ?? "Є план" }
+        if t.status == "day" { return "♥ Обоє вільні весь день" }
+        if t.status == "free" { return "♥ Обоє вільні з \(t.freeFrom)" }
+        return Evening.label(t)
+    }
+
+    @ViewBuilder private func dayList(_ title: String, _ list: [DayPlan], empty: String?) -> some View {
+        if !list.isEmpty {
+            Text(title).font(.system(size: 19, weight: .semibold)).padding(.top, 4)
+            VStack(spacing: 0) { ForEach(list) { d in dayRow(d) } }
+                .padding(.horizontal, 14)
+                .background(Theme.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        } else if let empty {
+            Text(title).font(.system(size: 19, weight: .semibold)).padding(.top, 4)
+            EmptyCard(text: empty)
         }
     }
 
@@ -180,7 +217,7 @@ struct EveningPage: View {
 
     private func load() async {
         let today = Date()
-        let end = cal.date(byAdding: .day, value: 6, to: today) ?? today
+        let end = cal.date(byAdding: .day, value: 13, to: today) ?? today
         days = (try? await API.current().availability(from: Evening.iso(today), to: Evening.iso(end))) ?? []
     }
 

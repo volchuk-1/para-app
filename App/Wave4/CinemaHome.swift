@@ -50,6 +50,7 @@ struct CinemaHome: View {
                 row("Кинули", store.watch.filter { $0.status == .dropped })
             }
             .padding(.bottom, 130)
+            .frame(width: UIScreen.main.bounds.width, alignment: .leading)
         }
         .ignoresSafeArea(edges: .top)
         .background(bg.ignoresSafeArea())
@@ -73,7 +74,8 @@ struct CinemaHome: View {
     private func heroCard(_ h: WatchItem) -> some View {
         Button { open = h } label: {
             ZStack(alignment: .bottomLeading) {
-                RemoteImage(url: h.backdropUrl ?? h.posterUrl).frame(height: 460).frame(maxWidth: .infinity).clipped()
+                // the picture lies over a box of the screen's width: a wide backdrop must not widen the whole page
+                Color.black.frame(height: 460).frame(maxWidth: .infinity).overlay { RemoteImage(url: h.backdropUrl ?? h.posterUrl) }.clipped()
                 LinearGradient(colors: [.black.opacity(0.35), .clear, bg.opacity(0.7), bg], startPoint: .top, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(h.status == .watching ? "ДИВИМОСЬ ЗАРАЗ" : "ХОЧЕМО").font(.system(size: 11, weight: .heavy)).tracking(2).foregroundStyle(accent)

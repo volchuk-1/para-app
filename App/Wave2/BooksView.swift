@@ -22,8 +22,8 @@ struct BooksPage: View {
                 VStack(alignment: .leading, spacing: 14) {
                     PageTitle(plain: "Наші", italic: "полиці", sub: "Тап по корінцю — книга виїжджає")
                     Picker("", selection: $mine) {
-                        Text("Моя полиця").tag(true)
-                        Text("Полиця · \(state.partner?.name ?? "")").tag(false)
+                        Text("Моя · \(books.filter { $0.ownerId == state.me?.id }.count)").tag(true)
+                        Text("\(state.partner?.name ?? "") · \(books.filter { $0.ownerId == state.partner?.id }.count)").tag(false)
                     }
                     .pickerStyle(.segmented)
                     if list.isEmpty {
@@ -35,9 +35,7 @@ struct BooksPage: View {
                         addButton("Штрихкод", "barcode.viewfinder") { add = .scan }
                         addButton("Вручну", "pencil") { add = .manual }
                     }
-                    section("Читаю", list.filter { $0.status == .reading || $0.status == .paused })
-                    section("Хочу прочитати", list.filter { $0.status == .want })
-                    section("Прочитано", list.filter { $0.status == .done })
+                    section("Зараз читаю", list.filter { $0.status == .reading || $0.status == .paused })
                     if let error { Text(error).font(.system(size: 13)).foregroundStyle(Theme.coffee) }
                 }
                 .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 120)
@@ -57,11 +55,58 @@ struct BooksPage: View {
         }
     }
 
-    /// A carved wooden bookcase without glass: arched top, warm light inside, shelves of spines.
+    private static let decor = ["🪴", "🕯️", "🏺", "🌿", "🗿", "🌍", "🐚", "🕰️"]
+
+    /// Books of one section laid out on shelves by their width — as many shelves as it takes.
+    private func shelves(_ books: [Book]) -> [[Book]] {
+        // screen − page padding − the case's sides − the shelf's own padding − room for a thing of decor
+        let room = UIScreen.main.bounds.width - 36 - 24 - 20 - 46
+        var out: [[Book]] = [], row: [Book] = []
+        var used: CGFloat = 0
+        for b in books {
+            let w = Spine.width(b) + 3
+            if used + w > room, !row.isEmpty { out.append(row); row = []; used = 0 }
+            row.append(b)
+            used += w
+        }
+        if !row.isEmpty { out.append(row) }
+        return out
+    }
+
+    private func shelfRow(_ row: [Book], decor: Int) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(row) { b in
+                    Button { withAnimation(.spring(response: 0.55, dampingFraction: 0.75)) { open = b } } label: { Spine(book: b) }
+                        .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+                Text(BooksPage.decor[decor % BooksPage.decor.count]).font(.system(size: 32)).shadow(color: .black.opacity(0.45), radius: 4, y: 4).padding(.bottom, 2)
+            }
+            .padding(.horizontal, 10).frame(height: 144, alignment: .bottom)
+            LinearGradient(colors: [Color(hex: 0xA8744A), Color(hex: 0x8A5A34), Color(hex: 0x6B4428)], startPoint: .top, endPoint: .bottom)
+                .frame(height: 9).shadow(color: .black.opacity(0.5), radius: 4, y: 4)
+        }
+    }
+
+    private func shelfGroup(_ title: String, _ items: [Book], start: Int) -> some View {
+        let rows = shelves(items)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title).font(.serif(17, .bold))
+                Text("\(items.count)").font(.system(size: 12)).opacity(0.6)
+            }
+            .foregroundStyle(Color(hex: 0xF1E3C8)).padding(.horizontal, 12).padding(.top, 12)
+            ForEach(Array(rows.enumerated()), id: \.offset) { i, row in shelfRow(row, decor: start + i) }
+        }
+    }
+
+    /// A carved wooden bookcase without glass: arched top, warm light inside, and shelf after shelf — by what is
+    /// being read, what waits, what is read.
     private var shelf: some View {
-        let perRow = 7
-        let rows = stride(from: 0, to: max(list.count, 1), by: perRow).map { Array(list[min($0, list.count)..<min($0 + perRow, list.count)]) }
-        let shown = rows.count < 2 ? rows + Array(repeating: [Book](), count: 2 - rows.count) : rows
+        let reading = list.filter { $0.status == .reading || $0.status == .paused }
+        let want = list.filter { $0.status == .want }
+        let done = list.filter { $0.status == .done }
         return VStack(spacing: 0) {
             ZStack {
                 ArchTop().fill(LinearGradient(colors: [Color(hex: 0x7A4E2D), Color(hex: 0x5A3720)], startPoint: .top, endPoint: .bottom))
@@ -70,25 +115,10 @@ struct BooksPage: View {
                     .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 7)
             }
             .frame(height: 58)
-            VStack(spacing: 0) {
-                ForEach(Array(shown.enumerated()), id: \.offset) { _, row in
-                    VStack(spacing: 0) {
-                        HStack(alignment: .bottom, spacing: 4) {
-                            ForEach(row) { b in
-                                Button { withAnimation(.spring(response: 0.55, dampingFraction: 0.75)) { open = b } } label: { Spine(book: b) }
-                                    .buttonStyle(.plain)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 10).frame(height: 206, alignment: .bottom)
-                        LinearGradient(colors: [Color(hex: 0xA8744A), Color(hex: 0x8A5A34), Color(hex: 0x6B4428)], startPoint: .top, endPoint: .bottom)
-                            .frame(height: 9).shadow(color: .black.opacity(0.5), radius: 4, y: 4)
-                    }
-                }
-                if list.isEmpty {
-                    Text("Шафа чекає на першу книжку — за штрихкодом або вручну.").font(.system(size: 14)).foregroundStyle(Color(hex: 0xFFE2B4).opacity(0.75))
-                        .multilineTextAlignment(.center).padding(.vertical, 8)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                if !reading.isEmpty { shelfGroup("Читаю", reading, start: 0) }
+                if !want.isEmpty { shelfGroup("Хочу прочитати", want, start: 2) }
+                if !done.isEmpty { shelfGroup("Прочитано", done, start: 5) }
             }
             .padding(.top, 8)
             .background {
@@ -165,7 +195,9 @@ struct ArchTop: Shape {
 
 struct Spine: View {
     let book: Book
-    private var width: CGFloat { CGFloat(30 + ((book.pages ?? 200) % 4) * 3) }
+    private static func seed(_ b: Book) -> Int { b.title.unicodeScalars.reduce(0) { $0 + Int($1.value) } + (b.pages ?? 0) }
+    static func width(_ b: Book) -> CGFloat { CGFloat(22 + (seed(b) % 4) * 3) }
+    private var width: CGFloat { Spine.width(book) }
     var body: some View {
         ZStack(alignment: .top) {
             BookLook.color(book)
@@ -175,13 +207,13 @@ struct Spine: View {
                     .scaleEffect(1.2)
                 LinearGradient(colors: [.black.opacity(0.4), .black.opacity(0.1), .black.opacity(0.15), .black.opacity(0.5)], startPoint: .leading, endPoint: .trailing)
             }
-            Text(book.title).font(.system(size: 11.5, weight: .bold)).lineLimit(1)
+            Text(book.title).font(.system(size: 9.5, weight: .bold)).lineLimit(1)
                 .fixedSize().rotationEffect(.degrees(-90)).frame(width: width).frame(maxHeight: .infinity)
                 .foregroundStyle(book.coverUrl != nil || !BookLook.light(book) ? Theme.cream : Theme.ink)
                 .shadow(color: .black.opacity(book.coverUrl != nil ? 0.7 : 0), radius: 2)
-            if book.status == .reading { Circle().fill(Theme.paper).frame(width: 8, height: 8).padding(.top, 8) }
+            if book.status == .reading { Circle().fill(Theme.paper).frame(width: 6, height: 6).padding(.top, 6) }
         }
-        .frame(width: width, height: CGFloat(150 + (book.pages ?? 200) % 50))
+        .frame(width: width, height: CGFloat(100 + Spine.seed(book) % 34))
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 2, bottomTrailingRadius: 2, topTrailingRadius: 4))
         .shadow(color: .black.opacity(0.15), radius: 2, y: 2)
         .rotationEffect(.degrees(book.status == .paused ? -7 : 0), anchor: .bottom)

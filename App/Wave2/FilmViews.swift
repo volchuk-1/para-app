@@ -134,6 +134,7 @@ struct FilmPage: View {
                             ForEach(WatchStatus.allCases) { Text($0.label).tag($0) }
                         }
                         .pickerStyle(.segmented)
+                        PlayRow(item: $item)
                         Divider()
                         Text("Додав(ла) \(item.addedBy == state.me?.id ? "ти" : state.partner?.name ?? "")").font(.system(size: 15, weight: .semibold))
                         if let o = item.overview, !o.isEmpty {

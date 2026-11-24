@@ -269,7 +269,10 @@ struct MemoryDetail: View {
                             .font(.system(size: 15, weight: .semibold)).background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream).padding(.top, 200)
                     }
                     if item.kind == "memory" || item.kind == "album" {
-                        Button("Видалити") { confirm = true }.font(.system(size: 13)).opacity(0.6).padding(.top, 20)
+                        Button("Видалити") { confirm = true }
+                            .font(.system(size: 14, weight: .bold)).foregroundStyle(Color(hex: 0xFF6B5E))
+                            .padding(.horizontal, 18).frame(height: 38)
+                            .background(Color(hex: 0xFF4637).opacity(0.2), in: Capsule()).padding(.top, 20)
                     }
                 }
                 .padding(.horizontal, 22).padding(.top, 76).padding(.bottom, 120)

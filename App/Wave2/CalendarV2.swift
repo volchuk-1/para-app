@@ -269,28 +269,40 @@ struct InvitesPage: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var store: Store
     @State private var open: Event?
+    @State private var hidden: Set<String> = []
+    @State private var shown: Set<String> = []
+    @State private var showArchive = false
+
+    private func archived(_ e: Event) -> Bool { !shown.contains(e.id) && (hidden.contains(e.id) || e.invitation?.archived == true) }
 
     var body: some View {
-        let list = store.events.filter { $0.invitation != nil }.sorted { $0.startsAt > $1.startsAt }
+        let all = store.events.filter { $0.invitation != nil }.sorted { $0.startsAt > $1.startsAt }
+        let list = all.filter { !archived($0) }
+        let arch = all.filter { archived($0) }
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                PageTitle(plain: "Наші", italic: "запрошення", sub: "\(list.filter { $0.invitation?.status == .pending }.count) чекають відповіді")
-                if list.isEmpty { EmptyCard(text: "Ще не було запрошень. Натисни «+» або «Вільний вечір» у календарі.") }
+                PageTitle(plain: "Наші", italic: "запрошення", sub: "\(list.filter { $0.invitation?.status == .pending }.count) чекають відповіді · свайп ліворуч — в архів")
+                if list.isEmpty { EmptyCard(text: "Тут порожньо. Натисни «+» або «Вільний вечір» у календарі.") }
                 ForEach(list) { e in
-                    Button { open = e } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(e.title).font(.system(size: 15, weight: .semibold))
-                                Text(e.startsAt.formatted(.dateTime.weekday(.wide).day().month(.wide).hour().minute().locale(Locale(identifier: "uk_UA")))).font(.system(size: 12.5)).foregroundStyle(Theme.muted)
-                            }
-                            Spacer()
-                            Text(status(e)).font(.system(size: 12, weight: .bold)).padding(.horizontal, 10).frame(height: 26)
-                                .background(e.invitation?.status == .accepted ? Theme.olive : Theme.tan, in: Capsule())
-                                .foregroundStyle(e.invitation?.status == .accepted ? Theme.cream : Theme.ink)
-                        }
-                        .padding(14).background(Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    SwipeToArchive(onArchive: { archive(e, true) }) { row(e) }
+                }
+                if !arch.isEmpty {
+                    Button { withAnimation(.snappy) { showArchive.toggle() } } label: {
+                        Label("Архів · \(arch.count)", systemImage: showArchive ? "chevron.up" : "archivebox")
+                            .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.muted)
+                            .frame(maxWidth: .infinity).frame(height: 44).background(Theme.ink.opacity(0.05), in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    if showArchive {
+                        ForEach(arch) { e in
+                            row(e).opacity(0.8)
+                                .overlay(alignment: .bottomTrailing) {
+                                    Button("Повернути") { archive(e, false) }
+                                        .font(.system(size: 12, weight: .bold)).padding(.horizontal, 12).frame(height: 28)
+                                        .background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream).padding(8)
+                                }
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 120)
@@ -298,6 +310,30 @@ struct InvitesPage: View {
         .background(Theme.cream.ignoresSafeArea())
         .foregroundStyle(Theme.ink)
         .fullScreenCover(item: $open) { e in InviteView(event: e) }
+    }
+
+    private func row(_ e: Event) -> some View {
+        Button { open = e } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(e.title).font(.system(size: 15, weight: .semibold))
+                    Text(e.startsAt.dayTime).font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+                }
+                Spacer()
+                Text(status(e)).font(.system(size: 12, weight: .bold)).padding(.horizontal, 10).frame(height: 26)
+                    .background(e.invitation?.status == .accepted ? Theme.olive : Theme.tan, in: Capsule())
+                    .foregroundStyle(e.invitation?.status == .accepted ? Theme.cream : Theme.ink)
+            }
+            .padding(14).background(Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func archive(_ e: Event, _ on: Bool) {
+        withAnimation(.snappy) {
+            if on { hidden.insert(e.id); shown.remove(e.id) } else { shown.insert(e.id); hidden.remove(e.id) }
+        }
+        Task { try? await API.current().archiveInvite(e.id, on) }
     }
 
     private func status(_ e: Event) -> String {

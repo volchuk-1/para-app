@@ -13,6 +13,8 @@ struct Invitation: Codable, Equatable, Hashable {
     var answeredAt: Date?
     var watchId: String? = nil
     var buyUrl: String? = nil
+    /// Hidden from my list of invitations (mine only).
+    var archived: Bool? = nil
 }
 
 struct Event: Codable, Identifiable, Equatable, Hashable {
@@ -118,12 +120,22 @@ struct WatchItem: Codable, Identifiable, Equatable, Hashable {
     var rating: SiteRating? = nil
     var reviews: [String: String]? = nil
     var fav: Bool? = nil
+    var play: PlayState? = nil
 
     var kindLabel: String { isAnime ? "Аніме" : (mediaType == "tv" ? "Серіал" : "Фільм") }
     var episodeLabel: String? {
         guard let s = season, let e = episode else { return nil }
         return "S\(s)E\(e)"
     }
+}
+
+/// Where we stopped in a film: seconds saved, and since when it has been playing (the position grows from then).
+struct PlayState: Codable, Equatable, Hashable {
+    var position: Int
+    var since: Date?
+    var runtime: Int?
+    var playing: Bool { since != nil }
+    func seconds(at now: Date = Date()) -> Int { max(0, position + (since.map { Int(now.timeIntervalSince($0)) } ?? 0)) }
 }
 
 struct WatchList: Decodable { let items: [WatchItem] }

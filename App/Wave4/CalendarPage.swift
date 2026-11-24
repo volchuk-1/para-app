@@ -226,11 +226,19 @@ struct CalendarPage: View {
         let nowM = cal.component(.hour, from: Date()) * 60 + cal.component(.minute, from: Date())
         let d = days.first { $0.date == iso }
         return VStack(alignment: .leading, spacing: 10) {
-            if let d { stripRow(d, today: today) } else { ProgressView().tint(Theme.olive).frame(maxWidth: .infinity).padding(20) }
             if let d {
+                DayCard(d: d, isToday: d.date == today, me: state.me?.name ?? "Я", partner: state.partner?.name ?? "",
+                        onInvite: { if d.isFree && d.date >= today { invite = d.date } })
+                ForEach(people.filter { $0.birthday == String(d.date.suffix(5)) }) { b in
+                    Text("🎂 \(b.name)" + (b.turns.map { " · \($0)" } ?? "")).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.coffee)
+                }
+            } else { ProgressView().tint(Theme.olive).frame(maxWidth: .infinity).padding(20) }
+            if let d, d.date < today {
+                Text("Цей день уже минув.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+            } else if let d {
                 ZStack(alignment: .topLeading) {
                     VStack(spacing: hourGap) {
-                        ForEach(H0..<H1, id: \.self) { h in hourRow(h, d: d, today: today, nowM: nowM) }
+                        ForEach(firstHour..<H1, id: \.self) { h in hourRow(h, d: d, today: today, nowM: nowM) }
                     }
                 }
                 .overlay(HourTouch(onTap: { y in tapHour(y, day: iso) }, onPress: { y, done in
@@ -292,9 +300,12 @@ struct CalendarPage: View {
             .foregroundStyle(b.kind == "work" ? Theme.muted : Theme.cream)
     }
 
+    /// Today the list starts at the current hour: the hours that have passed are not shown.
+    private var firstHour: Int { Evening.iso(anchor) == Evening.iso(Date()) ? cal.component(.hour, from: Date()) : H0 }
+
     private func hourAt(_ y: CGFloat) -> Int? {
-        let h = H0 + Int(max(0, y) / (hourH + hourGap))
-        return h >= H0 && h < H1 ? h : nil
+        let h = firstHour + Int(max(0, y) / (hourH + hourGap))
+        return h >= firstHour && h < H1 ? h : nil
     }
 
     private func tapHour(_ y: CGFloat, day d: String) {

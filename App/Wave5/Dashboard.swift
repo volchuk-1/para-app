@@ -56,6 +56,8 @@ struct NotchCard: Shape {
 }
 
 enum DashSheet: String, Identifiable { case mood, note, coin; var id: String { rawValue } }
+/// «Кіно / Вдома / Гуляти» on the evening face: asked first, sent after a yes.
+struct QuickAsk { let kind: String; let label: String; let time: String }
 
 struct DashboardPage: View {
     @EnvironmentObject var state: AppState
@@ -63,8 +65,11 @@ struct DashboardPage: View {
     @Binding var route: Route?
     @Binding var page: Page
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var phase
     @State private var d: Dashboard?
     @State private var spot: SpotNow?
+    @State private var spotAt = Date()
+    @State private var quick: QuickAsk?
     @State private var sheet: DashSheet?
     @State private var editing: WidgetEdit?
     @State private var slide = 0
@@ -79,11 +84,13 @@ struct DashboardPage: View {
                 if let d {
                     if d.soon, let n = d.next { soonCard(n) }
                     shape(d)
-                    WidgetGrid(layout: layout(d), d: d, spot: spot,
+                    WidgetGrid(layout: layout(d), d: d, spot: spot, spotAt: spotAt,
                                onTap: { tapFace($0) },
                                onEdit: { editing = WidgetEdit(w: $0, isNew: false) },
-                               onTouch: { k in Task { await touch(k) } })
+                               onTouch: { k in Task { await touch(k) } },
+                               onQuick: { kind, label, time in quick = QuickAsk(kind: kind, label: label, time: time) })
                     sentSong
+                    touchRow
                     addButton
                 } else {
                     RoundedRectangle(cornerRadius: 30).fill(Theme.tan.opacity(0.5)).frame(height: 420).overlay(ProgressView().tint(Theme.olive))
@@ -95,7 +102,22 @@ struct DashboardPage: View {
         .background(Theme.cream.ignoresSafeArea())
         .foregroundStyle(Theme.ink)
         .task { await load() }
+        // Spotify stays live: every 12 s while the screen is open, and at once when the app comes back
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(12))
+                if phase == .active, spot?.ready == true, let s = try? await API.current().spotifyNow() { spot = s; spotAt = Date() }
+            }
+        }
+        .onChange(of: phase) { _, p in if p == .active { Task { await load() } } }
         .refreshable { await load() }
+        .confirmationDialog(quick.map { "\($0.label) сьогодні о \($0.time)?" } ?? "", isPresented: Binding(get: { quick != nil }, set: { if !$0 { quick = nil } }), titleVisibility: .visible) {
+            Button("Надіслати запрошення") {
+                if let q = quick { Task { try? await API.current().quickEvening(q.kind, time: q.time); state.banner = "Запрошення надіслано"; await load() } }
+            }
+        } message: {
+            Text("\(d?.partner?.name ?? "") отримає запрошення, а подія з'явиться в календарі. За годину до неї прийде нагадування.")
+        }
         .sheet(item: $sheet, onDismiss: { Task { await load() } }) { s in
             switch s {
             case .mood: MoodSheet()
@@ -236,10 +258,12 @@ struct DashboardPage: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            HStack(spacing: 8) {
-                ForEach(0..<max(slides.count, 1), id: \.self) { i in Circle().strokeBorder(.white, lineWidth: 1.5).background(Circle().fill(i == slide ? .white : .clear)).frame(width: 7, height: 7) }
+            if slides.count > 1 {
+                HStack(spacing: 8) {
+                    ForEach(0..<slides.count, id: \.self) { i in Circle().strokeBorder(.white, lineWidth: 1.5).background(Circle().fill(i == slide ? .white : .clear)).frame(width: 7, height: 7) }
+                }
+                .padding(.bottom, 10)
             }
-            .padding(.bottom, 10)
         }
     }
 
@@ -288,6 +312,30 @@ struct DashboardPage: View {
         }
     }
 
+    /// «Думаю про тебе», «Скучаю», монетка — three quiet buttons under the widgets.
+    private var touchRow: some View {
+        HStack(spacing: 6) {
+            quiet("heart.fill", "Думаю про тебе") { Task { await touch("think") } }
+            quiet("hand.raised.fill", "Скучаю") { Task { await touch("miss") } }
+            quiet("circle.circle.fill", "Монетка") { sheet = .coin }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 2)
+    }
+
+    private func quiet(_ icon: String, _ title: String, _ action: @escaping () -> Void) -> some View {
+        Button { Haptic.hit(.heavy); action() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 12)).foregroundStyle(Theme.olive.opacity(0.8))
+                Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .padding(.horizontal, 12).frame(height: 32)
+            .background(Theme.ink.opacity(0.045), in: Capsule())
+            .foregroundStyle(Theme.muted)
+        }
+        .buttonStyle(.plain)
+    }
+
     private var addButton: some View {
         VStack(spacing: 8) {
             Button { addWidget() } label: {
@@ -296,7 +344,7 @@ struct DashboardPage: View {
                     .overlay(Capsule().strokeBorder(Theme.ink.opacity(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
             }
             .buttonStyle(.plain)
-            Text("Затисни віджет — розмір, стос і кольори. Свайп по стосу перевертає його.")
+            Text("Затисни віджет — розмір, стос і кольори. Стос гортається вгору-вниз.")
                 .font(.system(size: 12)).foregroundStyle(Theme.muted).multilineTextAlignment(.center).frame(maxWidth: .infinity)
         }
     }
@@ -349,6 +397,7 @@ struct DashboardPage: View {
             async let b = API.current().spotifyNow()
             d = try await a
             spot = try? await b
+            spotAt = Date()
             error = nil
         } catch { self.error = error.localizedDescription }
     }

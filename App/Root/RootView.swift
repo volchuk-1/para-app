@@ -56,7 +56,7 @@ struct MainView: View {
     /// HomeView still talks in old tabs; map them onto pages.
     private var legacyTab: Binding<Tab> {
         Binding(get: {
-            switch page { case .week, .month, .invites, .cal: return .calendar; case .watch, .books, .cinema, .archive: return .together; case .wishes: return .us; default: return .home }
+            switch page { case .week, .month, .invites, .cal, .trips: return .calendar; case .watch, .books, .cinema, .archive: return .together; case .wishes: return .us; default: return .home }
         }, set: { t in
             switch t { case .home: page = .home; case .calendar: page = .cal; case .together: page = .watch; case .us: page = .wishes }
         })
@@ -70,7 +70,8 @@ struct MainView: View {
                        + [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil)]),
             BarSection(id: "calendar", icon: "calendar", avatar: nil, label: "Календар", note: "", start: .cal,
                        subs: [BarSub(id: "cal", icon: "calendar", label: "Календар", page: .cal),
-                              BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites)]),
+                              BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites),
+                              BarSub(id: "trips", icon: "suitcase.rolling.fill", label: "Поїздки", page: .trips)]),
             BarSection(id: "together", icon: "heart.fill", avatar: nil, label: "Разом", note: "", start: .evening,
                        subs: [BarSub(id: "evening", icon: "moon.stars.fill", label: "Вечір", page: .evening), BarSub(id: "cinema", icon: "film.fill", label: "Кіно", page: .cinema),
                               BarSub(id: "watch", icon: "popcorn.fill", label: "Дивимось", page: .watch), BarSub(id: "books", icon: "books.vertical.fill", label: "Книжки", page: .books)]),
@@ -83,7 +84,8 @@ struct MainView: View {
                 switch page {
                 case .home: DashboardPage(route: $route, page: $page)
                 case .archive: GalleryPage()
-                case .pomo: PomodoroPage()
+                case .pomo: PomodoroPage(onClose: { page = .home })
+                case .trips: TripsPage()
                 case .stats: StatsPage()
                 case .cal: CalendarPage()
                 case .week: WeekPage()
@@ -107,6 +109,8 @@ struct MainView: View {
             WaveBar(page: $page, sections: sections, onAdd: { showAdd = true },
                     onSheet: { id in menu = id == "code" ? .code : .settings })
                 .frame(width: UIScreen.main.bounds.width)
+                .opacity(page == .pomo ? 0 : 1).offset(y: page == .pomo ? 120 : 0).allowsHitTesting(page != .pomo)
+                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: page == .pomo)
         }
         .overlay(alignment: .topTrailing) {
             BellButton(unread: store.unread) { menu = .notifications }

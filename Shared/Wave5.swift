@@ -45,6 +45,9 @@ struct AlbumPhoto: Codable, Hashable, Identifiable { let id: String; let url: St
 struct Album: Codable, Hashable, Identifiable { let id: String; let title: String; let count: Int; let coverUrl: String?; let place: String?; let photos: [AlbumPhoto] }
 struct AlbumResult: Decodable { let album: Album }
 struct Trailer: Codable, Hashable { let key: String; let lang: String }
+struct PlayResult: Decodable { let play: PlayState; let status: WatchStatus }
+struct RemoteInfo: Decodable { let connected: Bool; let online: Bool; let template: String }
+struct RemoteOpen: Decodable { let queued: Bool; let online: Bool; let url: String; let play: PlayState? }
 struct TrailerResult: Decodable { let trailer: Trailer? }
 
 extension API {
@@ -98,4 +101,18 @@ extension API {
         let _: AlbumResult = try await upload("/albums/\(id)/photos" + (q.isEmpty ? "" : "?" + q.joined(separator: "&")), jpeg: jpeg, method: "POST")
     }
     func deleteAlbum(_ id: String) async throws { try await delete("/albums/\(id)") }
+
+    // wave 6: where we stopped, the laptop, the archive of invitations
+    struct PlayBody: Encodable { let action: String; let position: Int? }
+    struct OpenBody: Encodable { let watchId: String }
+    struct TemplateBody: Encodable { let template: String }
+    struct KeyResult: Decodable { let key: String }
+    func play(_ id: String, _ action: String, position: Int?) async throws -> PlayResult { try await send("PUT", "/watch/\(id)/play", PlayBody(action: action, position: position)) }
+    func remote() async throws -> RemoteInfo { try await get("/remote") }
+    func remoteKey() async throws -> String { (try await send("POST", "/remote/key", Empty()) as KeyResult).key }
+    func remoteTemplate(_ t: String) async throws { let _: Empty = try await send("PUT", "/remote", TemplateBody(template: t)) }
+    func remoteOpen(_ watchId: String) async throws -> RemoteOpen { try await send("POST", "/remote/open", OpenBody(watchId: watchId)) }
+    func archiveInvite(_ id: String, _ on: Bool) async throws {
+        if on { let _: Empty = try await send("POST", "/invitations/\(id)/archive", Empty()) } else { try await delete("/invitations/\(id)/archive") }
+    }
 }
