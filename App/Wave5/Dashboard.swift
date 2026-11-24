@@ -56,6 +56,8 @@ struct NotchCard: Shape {
 }
 
 enum DashSheet: String, Identifiable { case mood, note, coin, card; var id: String { rawValue } }
+/// «Змінити Головну» opens on the list, or straight on one widget (after a long press on it)
+struct HomeEditStart: Identifiable { let id = UUID(); let layout: [DashWidget]; let widget: String? }
 /// «Кіно / Вдома / Гуляти» on the evening face: asked first, sent after a yes.
 struct QuickAsk { let kind: String; let label: String; let time: String }
 
@@ -78,6 +80,13 @@ struct DashboardPage: View {
     @State private var invite = false
     @State private var filmOpen: WatchItem?
     @State private var watchIndex = 0
+    @State private var homeEdit: HomeEditStart?
+    @State private var homePage: Int? = 0
+    @State private var moodOpen = false
+    @State private var moodHot: String?
+    @State private var moodFrames: [String: CGRect] = [:]
+    @State private var coinOpen = false
+    @State private var cardsOpen = false
 
     var body: some View {
         ScrollView {
@@ -85,15 +94,7 @@ struct DashboardPage: View {
                 header
                 if let d {
                     if d.soon, let n = d.next { soonCard(n) }
-                    shape(d)
-                    WidgetGrid(layout: layout(d), d: d, spot: spot, spotAt: spotAt,
-                               onTap: { tapFace($0) },
-                               onEdit: { editing = WidgetEdit(w: $0, isNew: false) },
-                               onTouch: { k in Task { await touch(k) } },
-                               onQuick: { kind, label, time in quick = QuickAsk(kind: kind, label: label, time: time) })
-                    sentSong
-                    touchRow
-                    addButton
+                    pager(d)
                 } else {
                     RoundedRectangle(cornerRadius: 30).fill(Theme.tan.opacity(0.5)).frame(height: 420).overlay(ProgressView().tint(Theme.olive))
                 }
@@ -136,6 +137,28 @@ struct DashboardPage: View {
                             onDelete: { Task { await remove(e.w.id) } })
         }
         .fullScreenCover(isPresented: $invite) { InviteBooking(start: .blank) }
+        .fullScreenCover(item: $homeEdit) { e in
+            HomeEditView(layout: e.layout, startWith: e.widget) { l in
+                if var dd = d { dd.layout = l; d = dd }
+                Task { await load() }
+            }
+        }
+        .fullScreenCover(isPresented: $coinOpen, onDismiss: { Task { await load() } }) { Coin3DView(me: state.me?.name ?? "", partner: d?.partner?.name ?? "") }
+        .fullScreenCover(isPresented: $cardsOpen) { CardsCarousel(first: d?.card) }
+        // the mood bubble grows out of the mood button
+        .overlay(alignment: .topTrailing) {
+            if moodOpen {
+                ZStack(alignment: .topTrailing) {
+                    Color.black.opacity(0.16).ignoresSafeArea().onTapGesture { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { moodOpen = false } }
+                    MoodBubble(shown: $moodOpen, partnerMood: d?.mood.partner, partner: d?.partner?.name ?? "", hot: $moodHot,
+                               onPick: { m in Task { await setMood(m) } }, onTouch: { k in Task { await touch(k) } })
+                        .padding(.top, 62).padding(.trailing, 12)
+                        .transition(.scale(scale: 0.15, anchor: .topTrailing).combined(with: .opacity))
+                }
+                .onPreferenceChange(MoodFrames.self) { moodFrames = $0 }
+            }
+        }
+        .animation(.spring(response: 0.45, dampingFraction: 0.72), value: moodOpen)
         .sensoryFeedback(.impact(weight: .heavy), trigger: pulse)
     }
 
@@ -148,16 +171,89 @@ struct DashboardPage: View {
             }
             Spacer(minLength: 6)
             // on the bell's level: the partner's mood on the left, mine on the right (tap to change)
-            Button { Haptic.hit(.medium); sheet = .mood } label: {
-                HStack(spacing: 2) {
-                    Text(d?.mood.partner?.emoji ?? "·").font(.system(size: 22)).frame(width: 38, height: 38)
-                    Text(d?.mood.me?.emoji ?? "🙂").font(.system(size: 22)).frame(width: 38, height: 38).background(Theme.tan.opacity(0.7), in: Circle())
-                }
-                .padding(4).background(Theme.paper, in: Capsule())
+            HStack(spacing: 2) {
+                Text(d?.mood.partner?.emoji ?? "·").font(.system(size: 22)).frame(width: 38, height: 38)
+                Text(d?.mood.me?.emoji ?? "🙂").font(.system(size: 22)).frame(width: 38, height: 38).background(Theme.tan.opacity(0.7), in: Circle())
             }
-            .buttonStyle(.plain)
+            .padding(4).background(Theme.paper, in: Capsule())
+            .contentShape(Capsule())
+            .onTapGesture { Haptic.hit(.medium); moodOpen = true }
+            .gesture(LongPressGesture(minimumDuration: 0.25).sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+                .onChanged { v in
+                    guard case .second(true, let drag) = v else { return }
+                    if !moodOpen { Haptic.hit(.medium); moodOpen = true }
+                    guard let drag else { return }
+                    let h = moodFrames.first { $0.value.insetBy(dx: -4, dy: -50).contains(drag.location) }?.key
+                    if h != moodHot { moodHot = h; if h != nil { Haptic.hit(.light) } }
+                }
+                .onEnded { _ in if let h = moodHot { moodHot = nil; Task { await setMood(h) } } })
             .padding(.trailing, 58).offset(y: -4)
         }
+    }
+
+    /// Головна in two pages side by side: the widgets, and the same day as a calm list
+    private func pager(_ d: Dashboard) -> some View {
+        VStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        shape(d)
+                        WidgetGrid(layout: layout(d), d: d, spot: spot, spotAt: spotAt,
+                                   onTap: { tapFace($0) },
+                                   onEdit: { w in openEdit(w.id) },
+                                   onTouch: { k in Task { await touch(k) } },
+                                   onQuick: { kind, label, time in quick = QuickAsk(kind: kind, label: label, time: time) })
+                        sentSong
+                        editHomeButton
+                    }
+                    .padding(.horizontal, 16)
+                    .containerRelativeFrame(.horizontal)
+                    .id(0)
+                    DashListPage(d: d, spot: spot, onTasks: { page = .tasks }, onFilm: { openFilm($0) },
+                                 onQuick: { k, label in quick = QuickAsk(kind: k, label: label, time: "19:30") },
+                                 onNote: { sheet = .note }, onEdit: { openEdit(nil) })
+                        .padding(.horizontal, 16)
+                        .containerRelativeFrame(.horizontal)
+                        .id(1)
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $homePage)
+            .padding(.horizontal, -16)
+            .sensoryFeedback(.selection, trigger: homePage)
+            HStack(spacing: 6) {
+                ForEach(0..<2, id: \.self) { i in
+                    Capsule().fill((homePage ?? 0) == i ? Theme.ink : Theme.ink.opacity(0.2)).frame(width: (homePage ?? 0) == i ? 18 : 6, height: 6)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.spring(response: 0.35, dampingFraction: 0.7), value: homePage)
+        }
+    }
+
+    private var editHomeButton: some View {
+        Button { openEdit(nil) } label: {
+            Label("Змінити Головну", systemImage: "square.grid.2x2").font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.muted)
+                .padding(.horizontal, 14).frame(height: 36)
+        }
+        .buttonStyle(.plain).frame(maxWidth: .infinity).padding(.top, 6)
+    }
+
+    private func openEdit(_ widget: String?) {
+        guard let d else { return }
+        Haptic.hit(.medium)
+        homeEdit = HomeEditStart(layout: layout(d), widget: widget)
+    }
+
+    private func setMood(_ m: String) async {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { moodOpen = false }
+        Haptic.hit(.medium)
+        var r = UserDefaults.standard.stringArray(forKey: "dv-moods") ?? []
+        r.removeAll { $0 == m }; r.insert(m, at: 0)
+        UserDefaults.standard.set(Array(r.prefix(8)), forKey: "dv-moods")
+        try? await API.current().setMood(m)
+        await load()
     }
 
     private func soonCard(_ n: DashEvent) -> some View {
@@ -183,7 +279,7 @@ struct DashboardPage: View {
                     .frame(width: W, height: mainH + footH)
                 // top-left: pen (widgets), chip, names
                 VStack(alignment: .leading, spacing: 0) {
-                    circleButton("plus") { addWidget() }
+                    circleButton("square.grid.2x2") { openEdit(nil) }
                     Spacer()
                     HStack(spacing: 5) { Image(systemName: "checkmark.seal.fill"); Text("Разом") }
                         .font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 11).padding(.vertical, 5).background(.white, in: Capsule())
@@ -411,10 +507,10 @@ struct DashboardPage: View {
         case "tasks": page = .tasks
         case "note": sheet = .note
         case "mood": sheet = .mood
-        case "coin": sheet = .coin
+        case "coin": coinOpen = true
         case "turn", "film": page = .watch
         case "memory": page = .archive
-        case "card": sheet = .card
+        case "card": cardsOpen = true
         case "jar": page = .finance
         default: break
         }

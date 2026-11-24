@@ -26,7 +26,8 @@ struct TimerPrep: Equatable {
     /// «Почати фокус» is the start itself (the plain timer still waits for ▶)
     var autostart = false
 }
-struct QueueItem: Equatable { let id: String; let title: String }
+/// one thing of a focus session: a task, or a step of a routine (its last step closes the routine for today)
+struct QueueItem: Equatable { let id: String; let title: String; var min: Int? = nil; var routine: String? = nil; var last = false }
 /// what the big card shows: only the task, the clock, time since start, or the countdown
 enum FocusView: String, CaseIterable {
     case minimal, clock, stopwatch, timer
@@ -115,6 +116,8 @@ struct FocusPage: View {
     /// the lift after a slide is not a tap
     @State private var justSlid = false
     @Namespace private var morph
+    @State private var backMode: FocusMode = .tasks
+    @State private var openedRoutine: Routine?
 
     private var partner: String { state.partner?.name ?? "партнер" }
     private var cal: Calendar { Dock.calendar }
@@ -122,7 +125,7 @@ struct FocusPage: View {
     var body: some View {
         ZStack(alignment: .top) {
             if mode == .timer {
-                TimerScreen(prep: $prep, partner: partner, onClose: { switchTo(.tasks) }, onFinished: { await finished() }) { label in
+                TimerScreen(prep: $prep, partner: partner, onClose: { switchTo(backMode) }, onFinished: { await finished() }) { label in
                     timerTop(label)
                 }
                 .transition(.opacity)
@@ -160,6 +163,9 @@ struct FocusPage: View {
         }
         .sheet(isPresented: $newTask, onDismiss: { Task { await loadTasks() } }) { NewTaskSheet(partner: partner) }
         .sheet(isPresented: $newRoutine, onDismiss: { Task { await loadRoutines() } }) { NewRoutineSheet() }
+        .sheet(item: $openedRoutine, onDismiss: { Task { await loadRoutines() } }) { r in
+            RoutineSheet(routine: r, partner: partner) { startRoutines([r]) }.presentationDetents([.medium, .large])
+        }
         .sensoryFeedback(.selection, trigger: hot)
     }
 
@@ -312,7 +318,7 @@ struct FocusPage: View {
                 .coordinateSpace(name: "flist")
                 .onPreferenceChange(RowFrames.self) { frames = $0 }
                 .background(Theme.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .simultaneousGesture(slideToPick(rows))
+                .simultaneousGesture(slideToPick(Set(rows.filter { !$0.done }.map(\.id))))
                 if rows.contains(where: { !$0.done }) && sel.isEmpty {
                     Text("Затисни справу й веди пальцем — виберуться кілька для фокусу.")
                         .font(.system(size: 12.5)).foregroundStyle(Theme.muted).frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.top, 2)
@@ -324,7 +330,7 @@ struct FocusPage: View {
     }
 
     /// press a task and slide: every open task under the finger joins the pick (like a to-do app made for focus)
-    private func slideToPick(_ rows: [TaskItem]) -> some Gesture {
+    private func slideToPick(_ pickable: Set<String>) -> some Gesture {
         LongPressGesture(minimumDuration: 0.35)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("flist")))
             .onChanged { v in
@@ -332,7 +338,7 @@ struct FocusPage: View {
                 if !sliding { sliding = true; justSlid = true; Haptic.hit(.medium) }
                 guard let drag else { return }
                 if let id = frames.first(where: { $0.value.contains(drag.location) })?.key,
-                   let task = rows.first(where: { $0.id == id }), !task.done, !sel.contains(id) {
+                   pickable.contains(id), !sel.contains(id) {
                     _ = withAnimation(.snappy(duration: 0.2)) { sel.insert(id) }
                     Haptic.hit(.light, 0.7)
                 }
@@ -413,14 +419,17 @@ struct FocusPage: View {
     // MARK: the round timer button and the focus card that grows out of it
 
     @ViewBuilder private var focusLayer: some View {
-        if mode == .tasks && !sel.isEmpty {
+        if (mode == .tasks || mode == .routine) && !sel.isEmpty {
             ZStack(alignment: .bottomTrailing) {
                 if card {
                     Color.black.opacity(0.25).ignoresSafeArea().onTapGesture { withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { card = false } }
                         .transition(.opacity)
                     focusCard
                 } else {
-                    Button { withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) { card = true }; Haptic.hit(.medium) } label: {
+                    Button {
+                        if mode == .routine { fmin = max(5, (routines ?? []).filter { sel.contains($0.id) }.reduce(0) { $0 + $1.minutes }) }
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) { card = true }; Haptic.hit(.medium)
+                    } label: {
                         Image(systemName: "timer").font(.system(size: 22, weight: .semibold)).foregroundStyle(Theme.cream)
                             .frame(width: 58, height: 58)
                             .background { Circle().fill(Theme.ink).matchedGeometryEffect(id: "focus", in: morph) }
@@ -454,7 +463,7 @@ struct FocusPage: View {
                 step("plus", 5).opacity(adjustable ? 1 : 0.25).disabled(!adjustable)
             }
             Button { startFocus() } label: {
-                Text("Почати фокус" + (sel.count > 1 ? " · \(sel.count) справи" : "")).font(.system(size: 16, weight: .bold))
+                Text("Почати фокус" + (sel.count > 1 ? " · \(sel.count) " + (mode == .routine ? "рутини" : "справи") : "")).font(.system(size: 16, weight: .bold))
                     .frame(maxWidth: .infinity).frame(height: 54).background(Color(hex: 0xF4F4F5), in: Capsule()).foregroundStyle(Color(hex: 0x111111))
             }
             .buttonStyle(PressScale())
@@ -474,9 +483,23 @@ struct FocusPage: View {
     }
 
     private func startFocus() {
+        if mode == .routine { startRoutines((routines ?? []).filter { sel.contains($0.id) }); return }
         let q = (list?.tasks ?? []).filter { sel.contains($0.id) && !$0.done }.map { QueueItem(id: $0.id, title: $0.title) }
         guard let first = q.first else { return }
+        backMode = .tasks
         prep = TimerPrep(name: first.title, minutes: fview == .timer || fview == .minimal ? fmin : 600, sub: "ФОКУС", queue: q, idx: 0, view: fview, autostart: true)
+        withAnimation(.snappy) { card = false; sel = [] }
+        switchTo(.timer)
+    }
+
+    /// picked routines become one session: their steps one after another
+    private func startRoutines(_ rs: [Routine]) {
+        let q = rs.flatMap { r in r.steps.enumerated().map { k, x in QueueItem(id: r.id, title: x.name, min: x.minutes, routine: r.title, last: k == r.steps.count - 1) } }
+        guard let first = q.first else { return }
+        let total = rs.reduce(0) { $0 + $1.minutes }
+        backMode = .routine
+        prep = TimerPrep(name: first.title, minutes: card ? (fview == .timer || fview == .minimal ? fmin : 600) : max(5, total), sub: "РУТИНА «\((first.routine ?? "").uppercased())»",
+                         queue: q, idx: 0, view: card ? fview : .timer, autostart: true)
         withAnimation(.snappy) { card = false; sel = [] }
         switchTo(.timer)
     }
@@ -496,68 +519,80 @@ struct FocusPage: View {
 
     private var routinesView: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let rs = routines {
-                if rs.isEmpty {
-                    Text("Рутина — це ланцюжок кроків з часом для дисципліни: «20 хв англійська → 30 хв комп’ютер». \(partner) теж бачить твої серії.")
-                        .font(.system(size: 14.5)).foregroundStyle(Theme.muted).padding(20)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Theme.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            if !sel.isEmpty {
+                HStack {
+                    Button("Скасувати") { withAnimation(.snappy) { sel = []; card = false } }
+                    Spacer()
+                    Text("Вибрано: \(sel.count)").font(.system(size: 14, weight: .semibold))
+                    Spacer()
+                    Button("Усі") { withAnimation(.snappy) { sel = Set((routines ?? []).filter { $0.owner == "me" }.map(\.id)) }; Haptic.hit(.light) }
                 }
-                ForEach(rs) { r in routineCard(r) }
+                .font(.system(size: 15, weight: .semibold)).tint(Theme.olive).frame(height: 36)
+            }
+            if let rs = routines {
+                VStack(spacing: 0) {
+                    if rs.isEmpty {
+                        Text("Рутина — це ланцюжок кроків з часом: «20 хв англійська → 30 хв комп’ютер». \(partner) теж бачить твої серії.")
+                            .font(.system(size: 14.5)).foregroundStyle(Theme.muted).padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    ForEach(Array(rs.enumerated()), id: \.element.id) { i, r in
+                        if i > 0 { Rectangle().fill(Theme.line).frame(height: 1).padding(.leading, 64) }
+                        routineRow(r)
+                    }
+                }
+                .coordinateSpace(name: "flist")
+                .onPreferenceChange(RowFrames.self) { frames = $0 }
+                .background(Theme.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .simultaneousGesture(slideToPick(Set(rs.filter { $0.owner == "me" }.map(\.id))))
+                if rs.contains(where: { $0.owner == "me" }) && sel.isEmpty {
+                    Text("Затисни рутину й веди пальцем — виберуться кілька, круглою кнопкою — у фокус.")
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.muted).multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                }
             } else {
                 RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.paper).frame(height: 150).opacity(0.6)
             }
-            bigButton("Нова рутина", "plus") { newRoutine = true }
+            Button { newRoutine = true } label: { Label("Нова рутина", systemImage: "plus").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.olive) }
+                .buttonStyle(.plain).frame(maxWidth: .infinity).padding(.top, 4)
         }
     }
 
-    private func routineCard(_ r: Routine) -> some View {
-        let all = max(1, r.steps.reduce(0) { $0 + $1.minutes })
-        let daysText = r.days.count == 7 ? "щодня" : r.days.map(wdName).joined(separator: ", ")
-        let streakText = r.doneToday ? "сьогодні ✓" : "серія: \(r.streak) " + dayWord(r.streak)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: routineSymbol(r.icon)).foregroundStyle(Theme.olive)
-                Text(r.title).font(.system(size: 17, weight: .bold))
-                Spacer()
-                Text("\(daysText) · \(r.minutes) хв").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.muted)
+    private func routineRow(_ r: Routine) -> some View {
+        let hers = r.owner == "partner"
+        let col = hers ? Color(hex: 0x4F6F95) : Theme.ink
+        let picked = sel.contains(r.id)
+        return HStack(spacing: 14) {
+            ZStack {
+                Circle().stroke(Color(hex: 0xE6E1D5), lineWidth: 3)
+                Circle().trim(from: 0, to: r.doneToday ? 1 : 0).stroke(col, style: StrokeStyle(lineWidth: 3, lineCap: .round)).rotationEffect(.degrees(-90))
+                Image(systemName: routineSymbol(r.icon)).font(.system(size: 14)).foregroundStyle(col)
             }
-            GeometryReader { g in
-                let room = g.size.width - CGFloat(max(0, r.steps.count - 1)) * 6
-                HStack(spacing: 6) {
-                    ForEach(Array(r.steps.enumerated()), id: \.offset) { i, s in
-                        Text("\(s.minutes) хв · \(s.name)").font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                            .padding(.horizontal, 10)
-                            .frame(width: max(30, room * CGFloat(s.minutes) / CGFloat(all)), height: 40, alignment: .leading)
-                            .background(routineColors[i % routineColors.count], in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .foregroundStyle(.white)
-                    }
+            .frame(width: 36, height: 36)
+            .overlay(Circle().stroke(Theme.ink, lineWidth: picked ? 3 : 0).padding(-4))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(r.title).font(.system(size: 16.5, weight: .medium))
+                Text(hers ? "\(partner) · " + (r.doneToday ? "сьогодні ✓" : "\(r.streak) дн. поспіль") : r.steps.map { "\($0.name) \($0.minutes)" }.joined(separator: " → ") + " · \(r.minutes) хв")
+                    .font(.system(size: 12)).foregroundStyle(hers ? col : Theme.muted).lineLimit(1)
+                HStack(spacing: 4) {
+                    ForEach(r.week, id: \.date) { w in Circle().fill(w.done ? col : Color(hex: 0xE0D9CC)).frame(width: 6, height: 6).opacity(w.on || w.done ? 1 : 0.35) }
                 }
+                .padding(.top, 3)
             }
-            .frame(height: 40).clipped()
-            HStack {
-                Text((r.owner == "partner" ? "\(partner) · " : "") + streakText).font(.system(size: 12)).foregroundStyle(Theme.muted)
-                Spacer()
-                if r.owner == "me" {
-                    Button { run(r) } label: {
-                        Text(r.doneToday ? "Ще раз" : "Почати").font(.system(size: 13, weight: .semibold))
-                            .padding(.horizontal, 16).frame(height: 38).background(Theme.ink, in: Capsule()).foregroundStyle(Theme.cream)
-                    }
-                    .buttonStyle(PressScale())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if !hers {
+                Button { startRoutines([r]) } label: {
+                    Image(systemName: "play.fill").font(.system(size: 14)).foregroundStyle(Theme.cream).frame(width: 40, height: 40).background(Theme.ink, in: Circle())
                 }
-            }
-            HStack(spacing: 4) {
-                ForEach(r.week, id: \.date) { w in
-                    Capsule().fill(w.done ? Theme.olive : Color(hex: 0xE6E1D5)).frame(height: 6).opacity(w.on || w.done ? 1 : 0.35)
-                }
+                .buttonStyle(PressScale())
             }
         }
-        .padding(16)
-        .background(Theme.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .contextMenu {
-            if r.owner == "me" {
-                Button("Видалити рутину", role: .destructive) { Task { try? await API.current().deleteRoutine(r.id); await loadRoutines() } }
-            }
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .background(picked ? Color(hex: 0xE6E0D3) : .clear)
+        .contentShape(Rectangle())
+        .background(GeometryReader { g in Color.clear.preference(key: RowFrames.self, value: [r.id: g.frame(in: .named("flist"))]) })
+        .onTapGesture {
+            if justSlid { return }
+            if !sel.isEmpty { if !hers { withAnimation(.snappy(duration: 0.2)) { if picked { sel.remove(r.id) } else { sel.insert(r.id) }; if sel.isEmpty { card = false } }; Haptic.hit(.light) } }
+            else { openedRoutine = r }
         }
     }
 
@@ -730,8 +765,9 @@ struct TimerScreen<Top: View>: View {
         let line2: String
         if !prep.queue.isEmpty {
             let q = prep.queue
-            line1 = q.count > 1 ? "Справа \(prep.idx + 1) з \(q.count)." : "Одна справа — без перемикань."
-            line2 = prep.idx + 1 < q.count ? "Далі — \(q[prep.idx + 1].title)." : "Остання — потім перерва."
+            let word = q[0].routine != nil ? "Крок" : "Справа"
+            line1 = q.count > 1 ? "\(word) \(prep.idx + 1) з \(q.count)" + (q[prep.idx].min.map { " · \($0) хв" } ?? "") + "." : "Одна справа — без перемикань."
+            line2 = prep.idx + 1 < q.count ? "Далі — \(q[prep.idx + 1].title)" + (q[prep.idx + 1].min.map { " \($0) хв" } ?? "") + "." : "Остання — потім перерва."
         } else if let r = prep.routine {
             line1 = "Крок \(prep.step + 1) з \(r.steps.count)."
             line2 = prep.step + 1 < r.steps.count ? "Далі — \(r.steps[prep.step + 1].minutes) хв \(r.steps[prep.step + 1].name)." : "Останній крок — потім серія +1."
@@ -889,10 +925,14 @@ struct TimerScreen<Top: View>: View {
         guard prep.idx < prep.queue.count else { return }
         busy = true; defer { busy = false }
         let cur = prep.queue[prep.idx]
-        _ = try? await API.current().patchTask(cur.id, API.TaskPatch(done: true, date: Evening.iso(Date())))
+        if cur.routine != nil { if cur.last { try? await API.current().routineDone(cur.id) } }
+        else { _ = try? await API.current().patchTask(cur.id, API.TaskPatch(done: true, date: Evening.iso(Date()))) }
         Haptic.hit(.heavy)
         if prep.idx + 1 < prep.queue.count {
-            withAnimation(.snappy) { prep.idx += 1; prep.name = prep.queue[prep.idx].title }
+            withAnimation(.snappy) {
+                prep.idx += 1; prep.name = prep.queue[prep.idx].title
+                if let r = prep.queue[prep.idx].routine { prep.sub = "РУТИНА «\(r.uppercased())»" }
+            }
             return
         }
         Haptic.ok()
@@ -971,5 +1011,59 @@ struct TimerSetSheet: View {
         .background(Theme.paper.ignoresSafeArea())
         .foregroundStyle(Theme.ink)
         .onAppear { name = prep.name; minutes = prep.minutes; together = prep.together }
+    }
+}
+
+/// A routine opened from the list: its steps on a time line from now, one «Почати».
+struct RoutineSheet: View {
+    let routine: Routine
+    let partner: String
+    var onStart: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var askDelete = false
+
+    var body: some View {
+        let times = routine.steps.reduce(into: [Date()]) { acc, s in acc.append(acc.last!.addingTimeInterval(Double(s.minutes) * 60)) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(routine.title).font(.serif(28, .bold))
+                Text((routine.days.count == 7 ? "щодня" : routine.days.map { ["нд", "пн", "вт", "ср", "чт", "пт", "сб"][$0 % 7] }.joined(separator: ", ")) + " · \(routine.minutes) хв" + (routine.streak > 0 ? " · \(routine.streak) дн. поспіль" : ""))
+                    .font(.system(size: 13.5)).foregroundStyle(Theme.muted)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(routine.steps.enumerated()), id: \.offset) { k, s in stepRow(times[k].shortTime, s.name, "\(s.minutes) хв", end: false) }
+                    stepRow(times.last!.shortTime, "Вільно", "", end: true)
+                }
+                .padding(.vertical, 10)
+                if routine.owner == "me" {
+                    Button { dismiss(); onStart() } label: {
+                        Label("Почати · \(routine.steps.first?.name ?? "") \(routine.steps.first?.minutes ?? 0) хв", systemImage: "play.fill").font(.system(size: 16, weight: .bold))
+                            .frame(maxWidth: .infinity).frame(height: 54).background(Theme.ink, in: Capsule()).foregroundStyle(Theme.cream)
+                    }
+                    .buttonStyle(PressScale())
+                    Button("Видалити рутину", role: .destructive) { askDelete = true }.frame(maxWidth: .infinity).padding(.top, 6)
+                }
+            }
+            .padding(20)
+        }
+        .background(Theme.paper.ignoresSafeArea())
+        .foregroundStyle(Theme.ink)
+        .confirmationDialog("Видалити рутину?", isPresented: $askDelete, titleVisibility: .visible) {
+            Button("Видалити", role: .destructive) { Task { try? await API.current().deleteRoutine(routine.id); dismiss() } }
+        }
+    }
+
+    private func stepRow(_ time: String, _ name: String, _ len: String, end: Bool) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack(alignment: .top) {
+                if !end { Rectangle().fill(Color(hex: 0xE0D9CC)).frame(width: 2).padding(.top, 14) }
+                Circle().fill(end ? Theme.ink : Theme.paper).frame(width: 12, height: 12).overlay(Circle().stroke(Theme.ink, lineWidth: 2)).padding(.top, 4)
+            }
+            .frame(width: 12)
+            Text(time).font(.system(size: 13)).monospacedDigit().foregroundStyle(Theme.muted).frame(width: 44, alignment: .leading)
+            Text(name).font(.system(size: 15.5, weight: .medium))
+            Spacer()
+            Text(len).font(.system(size: 13)).foregroundStyle(Theme.muted)
+        }
+        .frame(minHeight: 38, alignment: .top)
     }
 }

@@ -21,6 +21,9 @@ struct SettingsView: View {
     @State private var mix = false
     @State private var confirmSpotOff = false
     @State private var avatarPick: PhotosPickerItem?
+    /// shown as a whole screen from the right: «Назад» closes it
+    var onClose: (() -> Void)? = nil
+    private func close() { if let onClose { onClose() } else { dismiss() } }
 
     var body: some View {
         NavigationStack {
@@ -38,7 +41,7 @@ struct SettingsView: View {
                 if let message { Section { Text(message).foregroundStyle(Theme.muted) } }
             }
             .navigationTitle("Налаштування")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button { close() } label: { Label("Назад", systemImage: "chevron.left") } } }
             .onAppear { name = state.me?.name ?? "" }
             .task {
                 spot = try? await API.current().spotifyConnect()
@@ -52,7 +55,7 @@ struct SettingsView: View {
                 Button("Відключити", role: .destructive) { Task { try? await API.current().spotifyOff(); spot = try? await API.current().spotifyConnect() } }
             }
             .confirmationDialog("Вийти? Повернутись можна лише з новим кодом від партнера.", isPresented: $confirmSignOut, titleVisibility: .visible) {
-                Button("Вийти", role: .destructive) { state.signOut(); dismiss() }
+                Button("Вийти", role: .destructive) { state.signOut(); close() }
             }
         }
         .tint(Theme.olive)

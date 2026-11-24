@@ -45,6 +45,7 @@ struct MainView: View {
     @State private var page: Page = .home
     @State private var focusMode: FocusMode = .tasks
     @State private var focusPicking = false
+    @State private var bellOpen = false
     /// the timer of «Справи» is a whole dark screen: no bar over it
     private var noBar: Bool { (page == .tasks || page == .pomo) && (focusMode == .timer || focusPicking) }
     @State private var calendarDay = Calendar.current.startOfDay(for: Date())
@@ -116,11 +117,23 @@ struct MainView: View {
                 .frame(width: UIScreen.main.bounds.width)
                 .opacity(noBar ? 0 : 1).offset(y: noBar ? 120 : 0).allowsHitTesting(!noBar)
                 .animation(.spring(response: 0.4, dampingFraction: 0.85), value: noBar)
+
+            // Налаштування: a whole screen that slides in from the right
+            if menu == .settings {
+                SettingsView(onClose: { withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) { menu = nil }; Task { moneyOn = (try? await API.current().money())?.connected ?? false } })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.cream.ignoresSafeArea())
+                    .transition(.move(edge: .trailing))
+                    .zIndex(20)
+            }
         }
+        .animation(.spring(response: 0.45, dampingFraction: 0.9), value: menu == .settings)
+        // notifications grow out of the bell
+        .overlay { if bellOpen { BellPanel { bellOpen = false } } }
         .overlay(alignment: .topTrailing) {
-            BellButton(unread: store.unread) { menu = .notifications }
+            BellButton(unread: store.unread) { bellOpen.toggle(); Haptic.hit(.light) }
                 .padding(.trailing, 16).padding(.top, 4)
-                .opacity(noBar ? 0 : 1).allowsHitTesting(!noBar)
+                .opacity(noBar || menu == .settings ? 0 : 1).allowsHitTesting(!noBar && menu != .settings)
         }
         .environmentObject(store)
         .ignoresSafeArea(.keyboard)
@@ -128,11 +141,11 @@ struct MainView: View {
             AddSheet { r in showAdd = false; route = r }
                 .presentationDetents([.medium, .large])
         }
-        .sheet(item: $menu) { m in
+        .sheet(item: Binding(get: { menu == .settings ? nil : menu }, set: { menu = $0 })) { m in
             switch m {
             case .notifications: NotificationsView()
             case .code: CoupleCodeView().presentationDetents([.medium])
-            case .settings: SettingsView().onDisappear { Task { moneyOn = (try? await API.current().money())?.connected ?? false } }
+            case .settings: EmptyView()
             }
         }
         .sheet(item: $route) { r in
