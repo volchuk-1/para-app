@@ -20,9 +20,36 @@ struct MoneyDebt: Codable, Hashable {
 struct MoneyJar: Codable, Hashable, Identifiable { let id: String; let title: String; let balance: Double; var monthly: Double; var on: Bool }
 struct MoneySettings: Codable, Equatable { var income: Double; var life: Double; var usdRate: Double; var jars: [MoneyJar] }
 struct MoneyPlan: Codable, Hashable { let name: String; let done: String?; let interest: Double; let due: String?; let leftAtDue: Double?; let needForDue: Double? }
+struct MoneyPeriod: Codable, Equatable {
+    let kind: String
+    let from: String
+    let to: String
+    let spend: Double
+    let income: Double
+    let prevSpend: Double
+    let cats: [MoneyCat]
+    let budget: Double?
+    let budgetLeft: Double?
+    let salaryAt: String?
+}
+struct MoneyOp: Codable, Hashable, Identifiable {
+    let id: String
+    let t: Double
+    let amount: Double?
+    let cur: String
+    let income: Bool
+    let cat: String
+    let label: String?
+    let merchant: String?
+    let card: String?
+    let src: String?
+    var date: Date { Date(timeIntervalSince1970: t / 1000) }
+}
 struct MoneyResult: Codable, Equatable {
     let connected: Bool
     let updatedAt: String?
+    var period: MoneyPeriod? = nil
+    var ops: [MoneyOp]? = nil
     let month: MoneyMonth
     let cards: [MoneyCard]
     let pumb: [MoneyCard]
@@ -68,7 +95,12 @@ extension API {
     struct JarSetting: Encodable { let id: String; let monthly: Double; let on: Bool }
     struct MoneySettingsBody: Encodable { let income: Double; let life: Double; let usdRate: Double; let jars: [JarSetting] }
 
-    func money(pay: Double? = nil) async throws -> MoneyResult { try await get(pay.map { "/money?pay=\(Int($0))" } ?? "/money") }
+    func money(pay: Double? = nil, period: String = "salary", from: String? = nil, to: String? = nil) async throws -> MoneyResult {
+        var q = ["period=\(period)"]
+        if let pay { q.append("pay=\(Int(pay))") }
+        if period == "custom", let from, let to { q.append("from=\(from)"); q.append("to=\(to)") }
+        return try await get("/money?" + q.joined(separator: "&"))
+    }
     func newScriptKey() async throws -> String { (try await send("POST", "/me/script-key", Empty()) as ScriptKey).key }
     func setDebts(_ debts: [MoneyDebt]) async throws { try await send("PUT", "/money/debts", DebtsBody(debts: debts)) }
     func setMoneySettings(_ s: MoneySettings) async throws {

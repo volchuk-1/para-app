@@ -26,6 +26,10 @@ extension API {
     func answer(_ id: String, accept: Bool, note: String? = nil) async throws -> Event {
         (try await send("POST", "/invitations/\(id)/answer", AnswerBody(action: accept ? "accept" : "reschedule", note: note)) as EventResult).event
     }
+    /// action: accept | reschedule | decline
+    func answer(_ id: String, action: String, note: String?) async throws -> Event {
+        (try await send("POST", "/invitations/\(id)/answer", AnswerBody(action: action, note: note)) as EventResult).event
+    }
     func cancelInvitation(_ id: String) async throws -> Event { (try await send("POST", "/invitations/\(id)/cancel", Empty()) as EventResult).event }
     func uploadCover(_ id: String, jpeg: Data) async throws {
         struct R: Decodable { let coverUrl: String }

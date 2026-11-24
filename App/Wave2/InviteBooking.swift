@@ -119,7 +119,7 @@ struct InviteBooking: View {
             }
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) { ForEach(days, id: \.self) { d in dayTile(d).id(d) } }.padding(.horizontal, 18)
+                    HStack(spacing: 6) { ForEach(days, id: \.self) { d in dayTile(d).id(d) } }.padding(.horizontal, 18).padding(.vertical, 3)
                 }
                 .padding(.horizontal, -18)
                 .onChange(of: day) { _, d in withAnimation { proxy.scrollTo(d, anchor: .leading) } }
@@ -243,16 +243,17 @@ struct InviteBooking: View {
         return Button { day = d; time = nil } label: {
             VStack(spacing: 6) {
                 Text("\(cal.component(.day, from: date))").font(.system(size: 29, weight: .medium))
-                Text(date.formatted(.dateTime.weekday(.abbreviated).locale(Locale(identifier: "uk_UA")))).font(.system(size: 13)).foregroundStyle(Theme.muted)
+                Text(date.formatted(.dateTime.weekday(.abbreviated).locale(Locale(identifier: "uk_UA")))).font(.system(size: 13)).foregroundStyle(day == d ? Theme.paper.opacity(0.7) : Theme.muted)
             }
-            .frame(width: 74, height: 90)
-            .background(day == d ? Theme.paper : Theme.tan.opacity(0.45), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Theme.ink, lineWidth: day == d ? 1.6 : 0))
-            .overlay(alignment: .bottom) { if filmSessions?.isEmpty != false, plan?.isFree == true { Image(systemName: "heart.fill").font(.system(size: 10)).foregroundStyle(Theme.olive).padding(.bottom, 6) } }
+            .frame(width: 66, height: 84)
+            .foregroundStyle(day == d ? Theme.paper : Theme.ink)
+            .background(day == d ? Theme.ink : Theme.tan.opacity(0.45), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Theme.coffee, lineWidth: d == Evening.iso(Date()) && day != d ? 1.5 : 0))
+            .overlay(alignment: .bottom) { if filmSessions?.isEmpty != false, plan?.bothFree == true { Image(systemName: "heart.fill").font(.system(size: 10)).foregroundStyle(day == d ? Color(hex: 0xB9CC98) : Theme.olive).padding(.bottom, 6) } }
             .opacity(off ? 0.35 : 1)
         }
         .disabled(off)
-        .foregroundStyle(Theme.ink)
+        .buttonStyle(.plain)
     }
 
     private func setup() async {

@@ -62,20 +62,19 @@ struct MainView: View {
     }
 
     private var sections: [BarSection] {
-        let next = Dock.nextEvent(store.events).map { "\($0.title.prefix(14)) \($0.startsAt.shortTime)" } ?? "вільно"
-        let watching = store.watch.first { $0.status == .watching }.map { "\($0.title.prefix(12))\($0.episodeLabel.map { " " + $0 } ?? "")" } ?? "фільми, книжки"
         return [
-            BarSection(id: "me", icon: nil, avatar: String(state.me?.name.prefix(1) ?? "Я"), label: state.me?.name ?? "Я", note: "налаштування", start: .me,
-                       subs: (moneyOn ? [BarSub(id: "money", icon: "wallet.pass.fill", label: "Гроші", page: .money)] : []) + [BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil), BarSub(id: "finance", icon: "dollarsign.circle.fill", label: "Фінанси", page: .finance),
-                              BarSub(id: "games", icon: "gamecontroller.fill", label: "Ігри", page: .games)]),
-            BarSection(id: "home", icon: "house.fill", avatar: nil, label: "Головна", note: next, start: .home,
-                       subs: [BarSub(id: "home", icon: "house.fill", label: "Головна", page: .home), BarSub(id: "archive", icon: "square.stack.fill", label: "Історія", page: .archive)]),
-            BarSection(id: "calendar", icon: "calendar", avatar: nil, label: "Календар", note: freeTonight.map { "\($0) вільн. вечори" } ?? "тиждень", start: .week,
+            BarSection(id: "me", icon: nil, avatar: String(state.me?.name.prefix(1) ?? "Я"), label: state.me?.name ?? "Я", note: "", start: .home,
+                       subs: [BarSub(id: "home", icon: "house.fill", label: "Головна", page: .home)]
+                       + (moneyOn ? [BarSub(id: "money", icon: "wallet.pass.fill", label: "Гроші", page: .money)] : [])
+                       + [BarSub(id: "archive", icon: "photo.on.rectangle", label: "Історія", page: .archive),
+                          BarSub(id: "settings", icon: "gearshape.fill", label: "Налашт.", page: nil)]),
+            BarSection(id: "calendar", icon: "calendar", avatar: nil, label: "Календар", note: "", start: .week,
                        subs: [BarSub(id: "week", icon: "list.bullet", label: "Тиждень", page: .week), BarSub(id: "month", icon: "calendar", label: "Місяць", page: .month),
-                              BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites)]),
-            BarSection(id: "together", icon: "heart.fill", avatar: nil, label: "Разом", note: watching, start: .watch,
-                       subs: [BarSub(id: "watch", icon: "popcorn.fill", label: "Дивимось", page: .watch), BarSub(id: "books", icon: "books.vertical.fill", label: "Книжки", page: .books),
-                              BarSub(id: "wishes", icon: "gift.fill", label: "Бажання", page: .wishes)]),
+                              BarSub(id: "cinema", icon: "film.fill", label: "Кіно", page: .cinema), BarSub(id: "invites", icon: "envelope.open.fill", label: "Запрош.", page: .invites)]),
+            BarSection(id: "together", icon: "heart.fill", avatar: nil, label: "Разом", note: "", start: .evening,
+                       subs: [BarSub(id: "evening", icon: "moon.stars.fill", label: "Вечір", page: .evening), BarSub(id: "watch", icon: "popcorn.fill", label: "Дивимось", page: .watch),
+                              BarSub(id: "books", icon: "books.vertical.fill", label: "Книжки", page: .books), BarSub(id: "wishes", icon: "gift.fill", label: "Бажання", page: .wishes),
+                              BarSub(id: "finance", icon: "banknote.fill", label: "Банки", page: .finance)]),
         ]
     }
 
@@ -94,6 +93,8 @@ struct MainView: View {
                 case .me: MePage(page: $page) { menu = .settings }
                 case .finance: FinancePage()
                 case .money: MoneyPage()
+                case .evening: EveningPage()
+                case .cinema: CinemaPage()
                 case .games: ScrollView { VStack(alignment: .leading, spacing: 14) { PageTitle(plain: "Ігри", italic: "для двох"); EmptyCard(text: "Картки й інші ігри переїдуть сюди згодом.") }.padding(.horizontal, 18).padding(.top, 8) }.background(Theme.cream.ignoresSafeArea())
                 }
             }

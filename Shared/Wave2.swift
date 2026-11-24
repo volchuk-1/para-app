@@ -63,9 +63,13 @@ struct DayPlan: Codable, Equatable, Hashable, Identifiable {
     let plan: String?
     let meOff: Bool
     let partnerOff: Bool
+    var meKnown: Bool? = nil        // nil from an older server = known
+    var partnerKnown: Bool? = nil
     let blocks: DayBlocks
     var id: String { date }
     var isFree: Bool { status == "free" || status == "day" }
+    /// ♥ only when both have entered a schedule — otherwise «free» means «nobody said otherwise».
+    var bothFree: Bool { isFree && (partnerKnown ?? true) && (meKnown ?? true) }
 }
 
 struct AvailabilityResult: Decodable { let days: [DayPlan] }
@@ -126,6 +130,15 @@ enum Evening {
     }
 
     static func note(_ d: DayPlan, partner: String) -> String {
+        if d.meKnown == false { return "Внеси свій графік роботи — тоді буде видно вільні вечори" }
+        if d.partnerKnown == false {
+            switch d.status {
+            case "day": return "Ти вільний весь день · \(partner) ще не внесла графік"
+            case "free": return "Ти вільний з \(d.freeFrom) · \(partner) ще не внесла графік"
+            case "plan": return d.plan ?? ""
+            default: return "Ти зайнятий до \(d.freeFrom) · \(partner) ще не внесла графік"
+            }
+        }
         switch d.status {
         case "plan": return d.plan ?? ""
         case "day": return "Обоє вільні весь день"

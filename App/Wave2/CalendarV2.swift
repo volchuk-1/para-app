@@ -81,12 +81,16 @@ struct WeekPage: View {
                 + Text(" \(cal.component(.day, from: date)) \(date.formatted(.dateTime.month(.abbreviated).locale(Locale(identifier: "uk_UA"))))\(d.date == today ? " · сьогодні" : "")").font(.system(size: 13)).foregroundColor(Theme.muted)
                 Spacer()
                 EveningBadge(day: d) { if d.isFree && d.date >= today { invite = d.date } }
+                    .opacity(d.date < today ? 0.5 : 1)
             }
-            DayLane(letter: String(state.me?.name.prefix(1) ?? "Я"), blocks: d.blocks.me, off: d.meOff)
-            DayLane(letter: String(state.partner?.name.prefix(1) ?? "?"), blocks: d.blocks.partner, off: d.partnerOff)
+            DayLane(letter: String(state.me?.name.prefix(1) ?? "Я"), blocks: d.blocks.me, off: d.meOff, known: d.meKnown ?? true)
+            DayLane(letter: String(state.partner?.name.prefix(1) ?? "?"), blocks: d.blocks.partner, off: d.partnerOff, known: d.partnerKnown ?? true)
             Text(Evening.note(d, partner: state.partner?.name ?? "")).font(.system(size: 12)).foregroundStyle(Theme.muted)
         }
-        .padding(12).background(Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(12)
+        .background(d.date == today ? Color(hex: 0xF3E6D8) : Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.coffee, lineWidth: d.date == today ? 1.5 : 0))
+        .grayscale(d.date < today ? 1 : 0).opacity(d.date < today ? 0.5 : 1)
     }
 
     private func move(_ n: Int) { start = cal.date(byAdding: .day, value: n, to: start) ?? start; Task { await load() } }
@@ -136,6 +140,7 @@ struct DayLane: View {
     let letter: String
     let blocks: [DayBlock]
     let off: Bool
+    var known: Bool = true
     var body: some View {
         HStack(spacing: 8) {
             Text(letter).font(.serif(12, .bold)).foregroundStyle(Theme.muted).frame(width: 16)
@@ -144,7 +149,8 @@ struct DayLane: View {
                 let x = { (m: Int) -> CGFloat in CGFloat(max(0, min(16 * 60, m - 8 * 60))) / CGFloat(16 * 60) * w }
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(hex: 0xF1ECE3))
-                    if off && blocks.isEmpty { Text("ВИХІДНИЙ").font(.system(size: 9.5, weight: .bold)).foregroundStyle(Theme.olive).padding(.leading, 8) }
+                    if !known && blocks.isEmpty { Text("графік не внесено").font(.system(size: 9.5, weight: .semibold)).foregroundStyle(Theme.muted).padding(.leading, 8) }
+                    else if off && blocks.isEmpty { Text("ВИХІДНИЙ").font(.system(size: 9.5, weight: .bold)).foregroundStyle(Theme.olive).padding(.leading, 8) }
                     ForEach(Array(blocks.enumerated()), id: \.offset) { _, b in
                         let a = x(Evening.minutes(b.start)), e = x(Evening.minutes(b.end))
                         Capsule().fill(fill(b.kind)).frame(width: max(6, e - a)).offset(x: a)
@@ -193,6 +199,12 @@ struct MonthPage: View {
                 }
                 .font(.system(size: 13, weight: .semibold)).buttonStyle(.bordered).tint(Theme.ink).padding(.top, 8)
                 grid
+                HStack(spacing: 12) {
+                    HStack(spacing: 4) { Capsule().fill(Color(hex: 0xC9A27E)).frame(width: 14, height: 4); Text("\(state.me?.name.prefix(1) ?? "") працює") }
+                    HStack(spacing: 4) { Capsule().fill(Color(hex: 0x8DA06F)).frame(width: 14, height: 4); Text("\(state.partner?.name.prefix(1) ?? "") працює") }
+                    HStack(spacing: 4) { Image(systemName: "heart.fill").foregroundStyle(Theme.olive); Text("обоє вільні") }
+                }
+                .font(.system(size: 11.5)).foregroundStyle(Theme.muted).padding(.top, 6)
             }
             .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 120)
         }
@@ -217,6 +229,11 @@ struct MonthPage: View {
                         Text("\(Evening.date(d.date).map { cal.component(.day, from: $0) } ?? 0)").font(.system(size: 12, weight: .bold))
                             .padding(.horizontal, d.date == today ? 5 : 0).background(d.date == today ? Theme.coffee : .clear, in: RoundedRectangle(cornerRadius: 6))
                             .foregroundStyle(d.date == today ? Theme.cream : (d.date < today ? Theme.muted : Theme.ink))
+                        HStack(spacing: 2) {
+                            Capsule().fill(d.blocks.me.contains { $0.kind == "work" } ? Color(hex: 0xC9A27E) : .clear).frame(height: 3)
+                            Capsule().fill(d.blocks.partner.contains { $0.kind == "work" } ? Color(hex: 0x8DA06F) : .clear).frame(height: 3)
+                        }
+                        .opacity(d.date < today ? 0.5 : 1)
                         ForEach(evs.prefix(2)) { e in
                             Text(e.title).font(.system(size: 9.5)).lineLimit(1).padding(.horizontal, 3)
                                 .background(e.isOurs ? Theme.olive : Theme.tan, in: RoundedRectangle(cornerRadius: 4))
@@ -224,13 +241,13 @@ struct MonthPage: View {
                         }
                         Spacer(minLength: 0)
                         if d.date >= today {
-                            HStack { Spacer(); if d.isFree { Image(systemName: "heart.fill").font(.system(size: 9)).foregroundStyle(Theme.olive) } }
+                            HStack { Spacer(); if d.bothFree { Image(systemName: "heart.fill").font(.system(size: 9)).foregroundStyle(Theme.olive) } else if d.isFree { Image(systemName: "heart").font(.system(size: 9)).foregroundStyle(Theme.olive.opacity(0.6)) } }
                                 .frame(height: 10)
                                 .background(d.status == "busy" || d.status == "home" ? Theme.muted.opacity(0.25) : d.status == "maybe" ? Theme.coffee.opacity(0.15) : .clear)
                         }
                     }
                     .padding(3).frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
-                    .background(d.date < today ? Color(hex: 0xF4F1EB) : Theme.paper)
+                    .background(d.date == today ? Color(hex: 0xF3E6D8) : d.date < today ? Color(hex: 0xF4F1EB) : Theme.paper)
                     .overlay(Rectangle().stroke(Theme.ink, lineWidth: 0.75))
                 }
                 .buttonStyle(.plain)

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Every screen the bar can open.
 enum Page: String, Hashable {
-    case home, archive, week, month, invites, watch, books, wishes, me, finance, games, money
+    case home, archive, week, month, invites, watch, books, wishes, me, finance, games, money, evening, cinema
 }
 
 /// One group of the bar: a circle at rest, a pill when it is where you are, a sub-menu on the second tap.
@@ -71,19 +71,24 @@ struct WaveBar: View {
     private var current: BarSection? { sections.first { $0.id == active } }
     private var small: CGFloat { open ? 36 : 44 }
 
-    /// Subs share what is left of the row: 40…60 pt each.
-    private var subWidth: CGFloat {
+    /// Each sub is as wide as its label (at least 38 pt); squeezed evenly when the row would not fit.
+    private func labelWidth(_ t: String) -> CGFloat {
+        max(38, (t as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 10, weight: .semibold)]).width + 10)
+    }
+    private func subWidth(_ x: BarSub) -> CGFloat {
         guard open, let s = current, !s.subs.isEmpty else { return 0 }
         let others = CGFloat(sections.count - 1), n = CGFloat(s.subs.count)
         let room = width - 14 - 44 - others * small - (others + n) * 4
-        return max(40, min(60, (room / n).rounded(.down)))
+        let total = s.subs.map { labelWidth($0.label) }.reduce(0, +)
+        return (labelWidth(x.label) * min(1, room / max(1, total))).rounded(.down)
     }
 
     private var row: some View {
         HStack(spacing: 4) {
             ForEach(sections.reversed()) { s in
                 if open, s.id == active {
-                    ForEach(Array(s.subs.enumerated()), id: \.element.id) { i, x in
+                    // reversed: the first sub ends up right next to its circle (and slides out first)
+                    ForEach(Array(s.subs.reversed().enumerated()), id: \.element.id) { i, x in
                         Button { pick(x, in: s) } label: { subItem(x) }
                             .buttonStyle(.plain)
                             .transition(AnyTransition.slideOut.animation(spring.delay(0.045 * Double(s.subs.count - 1 - i))))
@@ -122,19 +127,18 @@ struct WaveBar: View {
             Image(systemName: x.icon).font(.system(size: 18, weight: .semibold)).scaleEffect(on ? 1.08 : 1)
             Text(x.label).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
         }
-        .frame(width: subWidth, height: 46)
+        .frame(width: subWidth(x), height: 46)
         .background(on ? Theme.olive.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
         .foregroundStyle(Theme.olive)
         .contentShape(Rectangle())
     }
 
+    /// A circle always opens its first page (В / Д → Головна), whatever was open in that group before.
     private func tap(_ s: BarSection) {
-        if s.id == active {
-            if open { fold() } else if !s.subs.isEmpty { unfold() }
-            return
-        }
+        let first = s.subs.first?.page ?? s.start
+        if s.id == active, open, page == first { fold(); return }
         withAnimation(spring) { active = s.id }
-        page = lastPick[s.id] ?? s.start
+        if page != first { page = first }
         if s.subs.isEmpty { fold() } else { unfold() }
     }
 

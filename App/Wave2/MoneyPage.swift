@@ -8,6 +8,11 @@ struct MoneyPage: View {
     @State private var editSettings = false
     @State private var jar: MoneyJar?
     @State private var error: String?
+    @State private var period = "salary"
+    @State private var from = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+    @State private var to = Date()
+    @State private var showAll = false
+    private let periods = [("day", "День"), ("week", "Тиждень"), ("month", "Місяць"), ("salary", "Від зарплати"), ("custom", "Свій")]
 
     var body: some View {
         ScrollView {
@@ -19,7 +24,7 @@ struct MoneyPage: View {
                         EmptyCard(text: "Підключи віджет «Витрати»: Налаштування → «Ключ для віджета» → скопіюй і встав у Scriptable (меню «Витрати» → «🔗 Підключити DaVincit»).")
                     } else {
                         debtCard(d)
-                        spendCard(d)
+                        if let p = d.period { periodCard(p, ops: d.ops ?? []) } else { spendCard(d) }
                         calculator(d)
                         if !(d.cards + d.pumb).isEmpty { cardsCard(d) }
                     }
@@ -39,8 +44,129 @@ struct MoneyPage: View {
     }
 
     private func load(pay p: Double? = nil) async {
-        do { let d = try await API.current().money(pay: p); data = d; pay = d.pay; error = nil }
-        catch { self.error = error.localizedDescription }
+        do {
+            let d = try await API.current().money(pay: p, period: period, from: Evening.iso(from), to: Evening.iso(to))
+            data = d; pay = d.pay; error = nil
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func periodTitle(_ p: MoneyPeriod) -> String {
+        switch p.kind {
+        case "day": return "Сьогодні"
+        case "week": return "Цей тиждень"
+        case "month": return "Витрати в \(MoneyText.inMonth[Calendar.current.component(.month, from: Date()) - 1])"
+        case "salary": return "Від зарплати" + (p.salaryAt.map { " " + MoneyText.date($0).split(separator: " ").prefix(2).joined(separator: " ") } ?? "")
+        default: return "\(MoneyText.date(p.from)) – \(MoneyText.date(p.to))"
+        }
+    }
+
+    private func periodCard(_ p: MoneyPeriod, ops: [MoneyOp]) -> some View {
+        let maxCat = max(1, p.cats.map { max($0.amount, $0.prev) }.max() ?? 1)
+        let diff = p.spend - p.prevSpend
+        let shown = showAll ? ops : Array(ops.prefix(12))
+        let days = Dictionary(grouping: shown) { Calendar.current.startOfDay(for: $0.date) }.map { DayOps(day: $0.key, ops: $0.value) }.sorted { $0.day > $1.day }
+        var daysLeft: Int? = nil
+        if p.kind == "salary", let s = p.salaryAt, let d = Evening.date(s) {
+            daysLeft = max(1, 30 - (Calendar.current.dateComponents([.day], from: d, to: Date()).day ?? 0))
+        }
+        let compare = (p.prevSpend > 0 ? "\(MoneyText.uah(abs(diff))) \(diff <= 0 ? "менше" : "більше"), ніж за такий самий період перед цим" : "Порівняння з’явиться, коли буде з чим")
+            + (p.income > 0 ? " · надходження \(MoneyText.uah(p.income))" : "")
+        return VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(periods, id: \.0) { item in
+                        Button(item.1) { period = item.0; showAll = false; Task { await load(pay: nil) } }
+                            .font(.system(size: 13, weight: .semibold)).padding(.horizontal, 13).frame(height: 34)
+                            .background(period == item.0 ? Theme.ink : Theme.tan, in: Capsule())
+                            .foregroundStyle(period == item.0 ? Theme.paper : Theme.ink)
+                    }
+                }
+            }
+            if period == "custom" {
+                HStack {
+                    DatePicker("", selection: $from, displayedComponents: .date).labelsHidden()
+                    Text("—")
+                    DatePicker("", selection: $to, displayedComponents: .date).labelsHidden()
+                    Button("Показати") { Task { await load(pay: nil) } }.font(.system(size: 13, weight: .semibold))
+                }
+                .environment(\.locale, Locale(identifier: "uk_UA"))
+            }
+            HStack { Text(periodTitle(p)).font(.system(size: 15, weight: .bold)); Spacer(); Text(MoneyText.uah(p.spend)).font(.system(size: 15, weight: .bold)) }
+            Text(compare).font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+            if let budget = p.budget, budget > 0, let left = p.budgetLeft {
+                budgetBox(spend: p.spend, budget: budget, left: left, daysLeft: daysLeft)
+            }
+            ForEach(p.cats, id: \.self) { c in catRow(c, maxCat: maxCat) }
+            if p.cats.isEmpty { Text("За цей період витрат нема.").font(.system(size: 13)).foregroundStyle(Theme.muted) }
+            Text("Операції").font(.system(size: 15, weight: .bold)).padding(.top, 8)
+            ForEach(days) { day in
+                Text(day.day.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "uk_UA"))).uppercased())
+                    .font(.system(size: 11.5, weight: .bold)).foregroundStyle(Theme.muted).padding(.top, 6)
+                ForEach(day.ops) { o in opRow(o) }
+            }
+            if ops.isEmpty { Text("Операцій нема.").font(.system(size: 13)).foregroundStyle(Theme.muted) }
+            if ops.count > shown.count {
+                Button("Показати всі (\(ops.count))") { showAll = true }
+                    .font(.system(size: 13.5, weight: .semibold)).padding(.horizontal, 14).frame(height: 34).background(Theme.tan, in: Capsule())
+            }
+        }
+        .padding(16).background(Theme.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    private func budgetBox(spend: Double, budget: Double, left: Double, daysLeft: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Бюджет на життя").font(.system(size: 14))
+                Spacer()
+                Text(MoneyText.uah(left)).font(.system(size: 14, weight: .bold))
+                Text("з \(MoneyText.uah(budget))").font(.system(size: 12)).foregroundStyle(Theme.muted)
+            }
+            GeometryReader { g in
+                Capsule().fill(Theme.ink.opacity(0.07))
+                    .overlay(alignment: .leading) { Capsule().fill(left < 0 ? Color(hex: 0xC0453A) : Theme.olive).frame(width: g.size.width * min(1, spend / budget)) }
+            }
+            .frame(height: 8)
+            if let n = daysLeft, left > 0 { Text("До наступної зарплати ≈\(n) дн. — можна ≈\(MoneyText.uah(left / Double(n))) на день.").font(.system(size: 12.5)).foregroundStyle(Theme.muted) }
+            if left < 0 { Text("Бюджет перевищено.").font(.system(size: 12.5)).foregroundStyle(Color(hex: 0xC0453A)) }
+        }
+        .padding(12).background(Theme.tan.opacity(0.35), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func catRow(_ c: MoneyCat, maxCat: Double) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text(c.label).font(.system(size: 14))
+                Spacer()
+                if c.prev > 0 {
+                    Text("\(c.amount >= c.prev ? "+" : "−")\(MoneyText.uah(abs(c.amount - c.prev)))").font(.system(size: 12))
+                        .foregroundStyle(c.amount > c.prev ? Color(hex: 0xC0453A) : Theme.olive)
+                }
+                Text(MoneyText.uah(c.amount)).font(.system(size: 14, weight: .bold)).frame(minWidth: 70, alignment: .trailing)
+            }
+            GeometryReader { g in
+                Capsule().fill(Theme.ink.opacity(0.07))
+                    .overlay(alignment: .leading) { Capsule().fill(c.cat == "fees" ? Color(hex: 0xC0453A) : Theme.olive).frame(width: g.size.width * c.amount / maxCat) }
+            }
+            .frame(height: 6)
+        }
+    }
+
+    private func opRow(_ o: MoneyOp) -> some View {
+        let src = ["wallet": "Гаманець", "manual": "вручну", "mono": "mono"][o.src ?? ""] ?? o.src
+        let meta = [o.label, o.card, src, o.date.formatted(.dateTime.hour().minute())].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(o.merchant ?? o.label ?? "").font(.system(size: 14)).lineLimit(1)
+                    Text(meta).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+                }
+                Spacer()
+                Text(o.amount.map { (o.income ? "+" : "−") + MoneyText.uah($0) } ?? "—").font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(o.income ? Theme.olive : Theme.ink)
+            }
+            .padding(.vertical, 6)
+            Divider()
+        }
     }
 
     private func ago(_ iso: String?) -> String {
@@ -190,6 +316,8 @@ struct MoneyPage: View {
         }
     }
 }
+
+private struct DayOps: Identifiable { let day: Date; let ops: [MoneyOp]; var id: Date { day } }
 
 private extension ISO8601DateFormatter {
     static let withFractions: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
