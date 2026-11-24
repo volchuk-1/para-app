@@ -443,6 +443,11 @@ struct CubeWidget: View {
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
+    private func eveningLabel(_ t: DayPlan) -> String {
+        if t.isFree { let from: String? = t.freeFrom; return "♥ Обоє вільні" + (from.map { " з " + $0 } ?? "") }
+        return t.status == "plan" ? "Вже є план" : t.status == "home" ? "Лише вдома" : "Зайнято"
+    }
+
     private func title(_ f: String) -> String {
         ["event": "Подія", "jar": "Банка", "film": "Дивимось", "evening": "Сьогодні ввечері", "pomodoro": "Помодоро", "note": "Записка", "mood": "Настрій", "turn": "Обирає фільм", "coin": "Монетка", "memory": d.photo?.yearAgo == true ? "Рік тому" : "Спогад"][f] ?? f
     }
@@ -467,11 +472,11 @@ struct CubeWidget: View {
             } else { Text("Нічого зараз").font(.system(size: 17, weight: .bold)) }
         case "evening":
             if let t = today {
-                Text(t.isFree ? "♥ Обоє вільні" + (t.freeFrom.map { " з \($0)" } ?? "") : t.status == "plan" ? "Вже є план" : t.status == "home" ? "Лише вдома" : "Зайнято").font(.system(size: 16, weight: .bold))
+                Text(eveningLabel(t)).font(.system(size: 16, weight: .bold))
                 if t.isFree {
                     HStack(spacing: 4) {
                         ForEach([("cinema", "Кіно"), ("home", "Вдома"), ("walk", "Гуляти")], id: \.0) { k in
-                            Button(k.1) { Task { try? await API.current().quickEvening(k.0, time: t.freeFrom ?? "19:30") } }
+                            Button(k.1) { Task { let from: String? = t.freeFrom; try? await API.current().quickEvening(k.0, time: from ?? "19:30") } }
                                 .font(.system(size: 11.5, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 28).background(.white.opacity(0.2), in: Capsule())
                         }
                     }
