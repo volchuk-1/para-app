@@ -853,6 +853,8 @@ struct TimerScreen<Top: View>: View {
         try? await API.current().stopPomo()
         LiveTasks.remove("pomo")
         pair = PomoPair(me: nil, partner: pair?.partner)
+        // a stopped focus session forgets its picked tasks
+        if !prep.queue.isEmpty { prep = TimerPrep() }
         Haptic.hit(.light)
     }
 
