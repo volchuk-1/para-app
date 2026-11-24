@@ -1,8 +1,11 @@
 import SwiftUI
 
+/// Settings in two groups: «Звичайні» (what you change for yourself) and «Системні» (code, keys, server).
 struct SettingsView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @State private var tab = 0
     @State private var name = ""
     @State private var server = KeyStore.serverURL.absoluteString
     @State private var code: String?
@@ -10,72 +13,105 @@ struct SettingsView: View {
     @State private var confirmSignOut = false
     @State private var scriptKey: String?
     @State private var people = false
-    @State private var widgets = false
+    @State private var spot: SpotConnect?
 
     var body: some View {
         NavigationStack {
             SoftForm {
-                Section("Ти") {
-                    TextField("Ім'я", text: $name)
-                    Button("Зберегти ім'я") { Task { await rename() } }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || name == state.me?.name)
-                }
                 Section {
-                    if let code {
-                        Text(code)
-                            .font(.system(size: 28, weight: .bold, design: .monospaced))
-                            .textSelection(.enabled)
-                        ShareLink(item: "Код пари в DaVincit: \(code)")
-                        Button("Змінити код (старий перестане працювати)", role: .destructive) { Task { await renew() } }
-                    } else {
-                        Button("Показати код пари") { Task { await loadCode() } }
+                    Picker("Група", selection: $tab) {
+                        Text("Звичайні").tag(0)
+                        Text("Системні").tag(1)
                     }
-                } header: { Text("Код пари") } footer: { Text("Для вас обох і для будь-якого пристрою: «У мене є код» → обрати себе.") }
-                Section {
-                    if let scriptKey {
-                        Text(scriptKey).font(.system(size: 13, design: .monospaced)).textSelection(.enabled)
-                        Button("Скопіювати") { UIPasteboard.general.string = scriptKey; message = "Скопійовано — встав у Scriptable" }
-                    } else {
-                        Button("Ключ для віджета") { Task { await newScriptKey() } }
-                    }
-                } header: { Text("Віджет «Витрати»") } footer: {
-                    Text("Щоб твої витрати й борг ішли в «Мої гроші». Встав ключ у Scriptable: «Витрати» → «🔗 Підключити DaVincit». Бачиш це лише ти; новий ключ вимикає старий.")
+                    .pickerStyle(.segmented)
                 }
-                Section {
-                    Button("Віджети й Spotify") { widgets = true }
-                    Button("Близькі й дні народження") { people = true }
-                } footer: { Text("Дні народження — у календарі обох, нагадування за 3 тижні, щоб відкрити збір.") }
-                Section("Сповіщення") {
-                    NavigationLink("Перевірити push і віджети") { DiagnosticsView() }
-                }
-                Section("Сервер") {
-                    TextField("Адреса", text: $server)
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("Зберегти адресу") {
-                        if let u = URL(string: server), u.scheme?.hasPrefix("http") == true { KeyStore.serverURL = u; message = "Збережено" }
-                        else { message = "Неправильна адреса" }
-                    }
-                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+                if tab == 0 { usual } else { system }
                 if let message { Section { Text(message).foregroundStyle(Theme.muted) } }
-                Section {
-                    Text("Дані про фільми й серіали — TMDB (themoviedb.org). Цей застосунок використовує TMDB API, але не схвалений і не сертифікований TMDB.")
-                        .font(.system(size: 13)).foregroundStyle(Theme.muted)
-                    Text("Спільна папка: \(Shared.groupWorks ? "працює" : "недоступна") (\(Shared.group))")
-                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.muted)
-                    Text("Іконка уробороса — Lorc, game-icons.net, ліцензія CC BY 3.0.").font(.system(size: 12)).foregroundStyle(Theme.muted)
-                } header: { Text("Про застосунок") }
-                Section {
-                    Button("Вийти з цього телефона", role: .destructive) { confirmSignOut = true }
-                }
             }
             .navigationTitle("Налаштування")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
             .onAppear { name = state.me?.name ?? "" }
+            .task { spot = try? await API.current().spotifyConnect() }
             .sheet(isPresented: $people) { PeopleSheet() }
-            .sheet(isPresented: $widgets) { WidgetsSheet() }
             .confirmationDialog("Вийти? Повернутись можна лише з новим кодом від партнера.", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Вийти", role: .destructive) { state.signOut(); dismiss() }
             }
+        }
+        .tint(Theme.olive)
+    }
+
+    // MARK: Звичайні
+
+    @ViewBuilder private var usual: some View {
+        Section {
+            TextField("Ім'я", text: $name)
+            Button("Зберегти ім'я") { Task { await rename() } }
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || name == state.me?.name)
+        } header: { Text("Твоє ім'я") } footer: {
+            Text("Так тебе бачить \(state.partner?.name ?? "партнер") у застосунку, і так тебе називають сповіщення. Зміниш — зміниться всюди, в обох.")
+        }
+        Section {
+            Text("Затисни віджет на головній — розмір, стос (кілька граней, як куб) і кольори. «Додати віджет» — під віджетами.")
+                .font(.system(size: 13)).foregroundStyle(Theme.muted)
+        } header: { Text("Віджети") }
+        Section {
+            if spot?.ready == true, let u = spot?.url?.asURL {
+                Button { openURL(u) } label: { Label("Підключити мій Spotify", systemImage: "music.note") }
+            } else {
+                Text("Spotify ще не налаштовано на сервері.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+            }
+        } header: { Text("Spotify") } footer: { Text("Віджет Spotify показує, що грає в тебе; подвійний тап перевертає його на партнера.") }
+        Section {
+            Button("Близькі й дні народження") { people = true }
+        } footer: { Text("Дні народження — у календарі обох, нагадування за 3 тижні, щоб відкрити збір.") }
+    }
+
+    // MARK: Системні
+
+    @ViewBuilder private var system: some View {
+        Section {
+            if let code {
+                Text(code)
+                    .font(.system(size: 28, weight: .bold, design: .monospaced))
+                    .textSelection(.enabled)
+                ShareLink(item: "Код пари в DaVincit: \(code)")
+                Button("Змінити код (старий перестане працювати)", role: .destructive) { Task { await renew() } }
+            } else {
+                Button("Показати код пари") { Task { await loadCode() } }
+            }
+        } header: { Text("Код пари") } footer: { Text("Для вас обох і для будь-якого пристрою: «У мене є код» → обрати себе.") }
+        Section {
+            if let scriptKey {
+                Text(scriptKey).font(.system(size: 13, design: .monospaced)).textSelection(.enabled)
+                Button("Скопіювати") { UIPasteboard.general.string = scriptKey; message = "Скопійовано — встав у Scriptable" }
+            } else {
+                Button("Ключ для віджета") { Task { await newScriptKey() } }
+            }
+        } header: { Text("Віджет «Витрати»") } footer: {
+            Text("Щоб твої витрати й борг ішли в «Мої гроші». Встав ключ у Scriptable: «Витрати» → «🔗 Підключити DaVincit». Бачиш це лише ти; новий ключ вимикає старий.")
+        }
+        Section("Сповіщення") {
+            NavigationLink("Перевірити push і віджети") { DiagnosticsView() }
+        }
+        Section("Сервер") {
+            TextField("Адреса", text: $server)
+                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button("Зберегти адресу") {
+                if let u = URL(string: server), u.scheme?.hasPrefix("http") == true { KeyStore.serverURL = u; message = "Збережено" }
+                else { message = "Неправильна адреса" }
+            }
+        }
+        Section {
+            Text("Дані про фільми й серіали — TMDB (themoviedb.org). Цей застосунок використовує TMDB API, але не схвалений і не сертифікований TMDB.")
+                .font(.system(size: 13)).foregroundStyle(Theme.muted)
+            Text("Спільна папка: \(Shared.groupWorks ? "працює" : "недоступна") (\(Shared.group))")
+                .font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.muted)
+            Text("Іконка уробороса — Lorc, game-icons.net, ліцензія CC BY 3.0.").font(.system(size: 12)).foregroundStyle(Theme.muted)
+        } header: { Text("Про застосунок") }
+        Section {
+            Button("Вийти з цього телефона", role: .destructive) { confirmSignOut = true }
         }
     }
 
@@ -84,7 +120,7 @@ struct SettingsView: View {
     }
 
     private func rename() async {
-        do { state.renamed(try await state.api.rename(name)); message = "Ім'я збережено" }
+        do { state.renamed(try await state.api.rename(name)); message = "Ім'я збережено — тепер ти «\(name)» всюди" }
         catch { message = error.localizedDescription }
     }
 

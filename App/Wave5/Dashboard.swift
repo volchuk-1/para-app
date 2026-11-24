@@ -55,7 +55,7 @@ struct NotchCard: Shape {
     }
 }
 
-enum DashSheet: String, Identifiable { case mood, note, coin, widgets; var id: String { rawValue } }
+enum DashSheet: String, Identifiable { case mood, note, coin; var id: String { rawValue } }
 
 struct DashboardPage: View {
     @EnvironmentObject var state: AppState
@@ -65,10 +65,9 @@ struct DashboardPage: View {
     @Environment(\.openURL) private var openURL
     @State private var d: Dashboard?
     @State private var spot: SpotNow?
-    @State private var spotPartner = false
     @State private var sheet: DashSheet?
+    @State private var editing: WidgetEdit?
     @State private var slide = 0
-    @State private var sendSong: SpotTrack?
     @State private var pulse: String?
     @State private var error: String?
     @State private var invite = false
@@ -80,16 +79,12 @@ struct DashboardPage: View {
                 if let d {
                     if d.soon, let n = d.next { soonCard(n) }
                     shape(d)
-                    HStack(spacing: 10) {
-                        let faces = d.faces.isEmpty ? ["event"] : d.faces
-                        let a = faces.enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
-                        let b = faces.enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
-                        CubeWidget(faces: a, d: d) { tapFace($0) }
-                        CubeWidget(faces: b.isEmpty ? faces : b, d: d) { tapFace($0) }
-                    }
-                    .frame(height: 172)
-                    spotify
-                    touchRow
+                    WidgetGrid(layout: layout(d), d: d, spot: spot,
+                               onTap: { tapFace($0) },
+                               onEdit: { editing = WidgetEdit(w: $0, isNew: false) },
+                               onTouch: { k in Task { await touch(k) } })
+                    sentSong
+                    addButton
                 } else {
                     RoundedRectangle(cornerRadius: 30).fill(Theme.tan.opacity(0.5)).frame(height: 420).overlay(ProgressView().tint(Theme.olive))
                 }
@@ -106,11 +101,12 @@ struct DashboardPage: View {
             case .mood: MoodSheet()
             case .note: NoteSheet(partnerNote: d?.note, partner: d?.partner?.name ?? "")
             case .coin: CoinSheet(partner: d?.partner?.name ?? "")
-            case .widgets: WidgetsSheet()
             }
         }
-        .confirmationDialog("Надіслати пісню \(d?.partner?.name ?? "")?", isPresented: Binding(get: { sendSong != nil }, set: { if !$0 { sendSong = nil } }), titleVisibility: .visible) {
-            Button("Надіслати «\(sendSong?.title ?? "")»") { if let t = sendSong { Task { try? await API.current().spotifySend(t) } } }
+        .sheet(item: $editing) { e in
+            WidgetEditSheet(w: e.w, isNew: e.isNew, track: spot?.me.track, partner: d?.partner?.name ?? "",
+                            onSave: { w in Task { await save(w) } },
+                            onDelete: { Task { await remove(e.w.id) } })
         }
         .fullScreenCover(isPresented: $invite) { InviteBooking(start: .blank) }
         .sensoryFeedback(.impact(weight: .heavy), trigger: pulse)
@@ -160,7 +156,7 @@ struct DashboardPage: View {
                     .frame(width: W, height: mainH + footH)
                 // top-left: pen (widgets), chip, names
                 VStack(alignment: .leading, spacing: 0) {
-                    circleButton("pencil") { sheet = .widgets }
+                    circleButton("plus") { addWidget() }
                     Spacer()
                     HStack(spacing: 5) { Image(systemName: "checkmark.seal.fill"); Text("Разом") }
                         .font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 11).padding(.vertical, 5).background(.white, in: Capsule())
@@ -276,96 +272,61 @@ struct DashboardPage: View {
         return a == 1 && b != 11 ? "день" : (2...4).contains(a) && !(12...14).contains(b) ? "дні" : "днів"
     }
 
-    // MARK: Spotify — one widget; double tap: the other one; long press: send the song
+    // MARK: widgets: the layout, adding, saving
 
-    private var spotify: some View {
-        let side = spotPartner ? spot?.partner : spot?.me
-        let t = side?.track
-        return Group {
-            if let s = spot, !s.ready {
-                Button { sheet = .widgets } label: { spotRow(nil, small: "Spotify", title: "Ще не підключено", sub: "Налаштування → Віджети", dark: false) }.buttonStyle(.plain)
-            } else {
-                spotCard(t, small: (spotPartner ? (spot?.partner?.name ?? "") : "Ти") + (side?.linked == false ? " · не підключено" : t?.playing == true ? " · зараз грає" : " · останнє"))
-                    .rotation3DEffect(.degrees(spotPartner ? 360 : 0), axis: (x: 1, y: 0, z: 0))
-                    .onTapGesture(count: 2) { Haptic.hit(.heavy); withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) { spotPartner.toggle() } }
-                    .onLongPressGesture(minimumDuration: 0.45) { Haptic.hit(.heavy); if let t { sendSong = t } }
-            }
-            if let sent = spot?.me.sent, sent.at.timeIntervalSinceNow > -3 * 86400 {
-                Button { if let u = sent.url?.asURL { openURL(u) } } label: {
-                    Label("Тобі надіслали: \(sent.title)", systemImage: "music.note").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.olive)
-                }
+    /// The saved layout; an old server without it — the faces as small widgets.
+    private func layout(_ d: Dashboard) -> [DashWidget] {
+        if let l = d.layout { return l }
+        return (d.faces.isEmpty ? ["event"] : d.faces).enumerated().map { DashWidget(id: "f\($0.offset)", size: "s", faces: [$0.element]) }
+    }
+
+    @ViewBuilder private var sentSong: some View {
+        if let sent = spot?.me.sent, sent.at.timeIntervalSinceNow > -3 * 86400 {
+            Button { if let u = sent.url?.asURL { openURL(u) } } label: {
+                Label("Тобі надіслали: \(sent.title)", systemImage: "music.note").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.olive).lineLimit(1)
             }
         }
     }
-    /// Like Spotify's own widget: the cover's colours behind, the cover, the logo, the track.
-    private func spotCard(_ t: SpotTrack?, small: String) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            Color(hex: 0x1F1F1F)
-            if let c = t?.cover { RemoteImage(url: c).blur(radius: 44).scaleEffect(1.7).opacity(0.8); Color.black.opacity(0.28) }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .top) {
-                    RemoteImage(url: t?.cover).frame(width: 66, height: 66).clipShape(RoundedRectangle(cornerRadius: 8)).shadow(color: .black.opacity(0.4), radius: 10, y: 4)
-                    Spacer()
-                    if t?.playing == true { Image(systemName: "waveform").symbolEffect(.variableColor.iterative).font(.system(size: 15, weight: .bold)).padding(.top, 4).padding(.trailing, 6) }
-                    SpotifyGlyph().frame(width: 26, height: 26)
-                }
-                Spacer(minLength: 12)
-                Text(small.uppercased()).font(.system(size: 10.5, weight: .bold)).tracking(0.8).opacity(0.8)
-                Text(t?.title ?? "Нічого не грає").font(.system(size: 18, weight: .bold)).lineLimit(1)
-                Text(t?.artist ?? "").font(.system(size: 14)).opacity(0.85).lineLimit(1)
+
+    private var addButton: some View {
+        VStack(spacing: 8) {
+            Button { addWidget() } label: {
+                Label("Додати віджет", systemImage: "plus").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity).frame(height: 48)
+                    .overlay(Capsule().strokeBorder(Theme.ink.opacity(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
             }
-            .padding(16)
+            .buttonStyle(.plain)
+            Text("Затисни віджет — розмір, стос і кольори. Свайп по стосу перевертає його.")
+                .font(.system(size: 12)).foregroundStyle(Theme.muted).multilineTextAlignment(.center).frame(maxWidth: .infinity)
         }
-        .frame(height: 164)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .foregroundStyle(.white)
-        .contentShape(Rectangle())
     }
 
-    private func spotRow(_ cover: String?, small: String, title: String, sub: String, dark: Bool, playing: Bool = false) -> some View {
-        HStack(spacing: 12) {
-            RemoteImage(url: cover).frame(width: 58, height: 58).clipShape(RoundedRectangle(cornerRadius: 14))
-                .overlay(alignment: .bottomTrailing) { Circle().fill(Color(hex: 0x1DB954)).frame(width: 16, height: 16).overlay(Circle().stroke(Theme.cream, lineWidth: 2)).offset(x: 5, y: 5) }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(small).font(.system(size: 11.5)).opacity(0.7)
-                Text(title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                Text(sub).font(.system(size: 12.5)).opacity(0.75).lineLimit(1)
-            }
-            Spacer()
-            if playing { Image(systemName: "waveform").symbolEffect(.variableColor.iterative).foregroundStyle(Color(hex: 0x1DB954)) }
-        }
-        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-        .background(dark ? (spotPartner ? Color(hex: 0x2F3A24) : Theme.ink) : Color(hex: 0xE6E2D6), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .foregroundStyle(dark ? Theme.cream : Theme.ink)
-        .overlay(alignment: .topTrailing) { if dark { Text("2× тап — інший · затисни — надіслати").font(.system(size: 9)).opacity(0.4).padding(.trailing, 16).padding(.top, 7).foregroundStyle(Theme.cream) } }
+    private func addWidget() {
+        Haptic.hit(.medium)
+        editing = WidgetEdit(w: DashWidget(id: "w\(Int(Date().timeIntervalSince1970))", size: "s", faces: ["event"]), isNew: true)
     }
 
-    // MARK: «думаю про тебе», «скучаю», coin
+    private func save(_ w: DashWidget) async {
+        guard let d else { return }
+        var l = layout(d)
+        if let i = l.firstIndex(where: { $0.id == w.id }) { l[i] = w } else { l.append(w) }
+        await put(l)
+    }
 
-    private var touchRow: some View {
-        HStack(spacing: 8) {
-            touchButton("heart.fill", "Думаю про тебе") { await touch("think") }
-            touchButton("hand.raised.fill", "Скучаю") { await touch("miss") }
-            touchButton("circle.circle.fill", "Монетка") { sheet = .coin }
-        }
-        .padding(.top, 6)
+    private func remove(_ id: String) async {
+        guard let d else { return }
+        await put(layout(d).filter { $0.id != id })
     }
-    private func touchButton(_ icon: String, _ t: String, _ a: @escaping () async -> Void) -> some View {
-        Button { Task { await a() } } label: {
-            VStack(spacing: 4) { Image(systemName: icon).font(.system(size: 21)).foregroundStyle(Theme.olive); Text(t).font(.system(size: 11.5, weight: .semibold)) }
-                .frame(maxWidth: .infinity, minHeight: 64)
-                .background(Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .scaleEffect(pulse == t ? 1.12 : 1)
-        }
-        .buttonStyle(.plain)
+
+    private func put(_ l: [DashWidget]) async {
+        do { _ = try await API.current().setLayout(l); Haptic.ok(); await load() }
+        catch { self.error = error.localizedDescription }
     }
+
     private func touch(_ kind: String) async {
-        Haptic.hit(.heavy)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) { pulse = kind == "miss" ? "Скучаю" : "Думаю про тебе" }
+        pulse = kind + "\(Date().timeIntervalSince1970)"
         do { try await API.current().touch(kind); state.banner = kind == "miss" ? "Надіслано: скучаю" : "\(d?.partner?.name ?? "") отримає сердечко" }
         catch { self.error = "Зачекай трохи перед наступним" }
-        try? await Task.sleep(for: .milliseconds(400))
-        withAnimation { pulse = nil }
     }
 
     private func tapFace(_ f: String) {
@@ -395,148 +356,6 @@ struct DashboardPage: View {
 
 extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
-}
-
-// MARK: - A widget cube: swipe turns it a quarter to the next face (only when there is more than one)
-
-struct CubeWidget: View {
-    let faces: [String]
-    let d: Dashboard
-    var onTap: (String) -> Void
-    @State private var idx = 0
-    @State private var turn: CGFloat = 0
-    @State private var dir: CGFloat = 1
-    @State private var fin: Finance4?
-    @State private var today: DayPlan?
-
-    var body: some View {
-        GeometryReader { g in
-            let w = g.size.width
-            let next = faces.isEmpty ? 0 : (idx + Int(dir) + faces.count) % faces.count
-            ZStack {
-                if turn > 0 {
-                    face(faces[next], index: next)
-                        .rotation3DEffect(.degrees(Double(dir * 90 * (1 - turn))), axis: (x: 0, y: 1, z: 0), anchor: dir > 0 ? .leading : .trailing, perspective: 0.6)
-                        .offset(x: dir * w * (1 - turn))
-                }
-                face(faces[idx % max(1, faces.count)], index: idx)
-                    .rotation3DEffect(.degrees(Double(-dir * 90 * turn)), axis: (x: 0, y: 1, z: 0), anchor: dir > 0 ? .trailing : .leading, perspective: 0.6)
-                    .offset(x: -dir * w * turn)
-            }
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 20).onEnded { v in
-                guard faces.count > 1, abs(v.translation.width) > 28 else { return }
-                dir = v.translation.width < 0 ? 1 : -1
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) { turn = 1 } completion: {
-                    idx = (idx + Int(dir) + faces.count) % faces.count
-                    turn = 0
-                }
-            })
-            .onTapGesture { if !faces.isEmpty { onTap(faces[idx % faces.count]) } }
-            .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: idx)
-        }
-        .task {
-            if faces.contains("jar") { fin = try? await API.current().finance4() }
-            if faces.contains("evening") { let t = Evening.iso(Date()); today = (try? await API.current().availability(from: t, to: t))?.first }
-        }
-    }
-
-    @ViewBuilder private func face(_ f: String, index: Int) -> some View {
-        let (bg, fg): (Color, Color) = {
-            switch f {
-            case "event": return (Theme.olive, Theme.cream)
-            case "jar": return (Theme.sand, Theme.ink)
-            case "film": return (Color(hex: 0x211F1D), .white)
-            case "evening": return (Theme.coffee, .white)
-            case "pomodoro": return (.black, .white)
-            case "note": return (Color(hex: 0xE6E2D6), Theme.ink)
-            case "mood": return (Color(hex: 0xDCE3CF), Theme.ink)
-            case "turn": return (Theme.ink, Theme.cream)
-            case "coin": return (Color(hex: 0xC9A27E), Theme.ink)
-            default: return (Color(hex: 0x555555), .white)
-            }
-        }()
-        ZStack(alignment: .bottomLeading) {
-            bg
-            if f == "memory", let u = d.photo?.url { AuthImage(url: u); LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom) }
-            if f == "film", let u = d.film?.backdropUrl { RemoteImage(url: u).opacity(0.55) }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title(f).uppercased()).font(.system(size: 10.5, weight: .bold)).tracking(1.2).opacity(0.75)
-                Spacer(minLength: 0)
-                content(f)
-            }
-            .padding(14).foregroundStyle(fg)
-            if faces.count > 1 {
-                HStack(spacing: 3) { ForEach(0..<faces.count, id: \.self) { i in Circle().fill(fg.opacity(i == index % faces.count ? 1 : 0.3)).frame(width: 5, height: 5) } }
-                    .padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-    }
-
-    private func eveningLabel(_ t: DayPlan) -> String {
-        if t.isFree { let from: String? = t.freeFrom; return "♥ Обоє вільні" + (from.map { " з " + $0 } ?? "") }
-        return t.status == "plan" ? "Вже є план" : t.status == "home" ? "Лише вдома" : "Зайнято"
-    }
-
-    private func title(_ f: String) -> String {
-        ["event": "Подія", "jar": "Банка", "film": "Дивимось", "evening": "Сьогодні ввечері", "pomodoro": "Помодоро", "note": "Записка", "mood": "Настрій", "turn": "Обирає фільм", "coin": "Монетка", "memory": d.photo?.yearAgo == true ? "Рік тому" : "Спогад"][f] ?? f
-    }
-
-    @ViewBuilder private func content(_ f: String) -> some View {
-        switch f {
-        case "event":
-            if let n = d.next {
-                Text(n.title).font(.system(size: 17, weight: .bold)).lineLimit(2)
-                Text(n.startsAt.formatted(.dateTime.weekday(.abbreviated).hour().minute().locale(Locale(identifier: "uk_UA")))).font(.system(size: 12)).opacity(0.8)
-            } else { Text("Попереду пусто").font(.system(size: 17, weight: .bold)); Text("тап — запросити").font(.system(size: 12)).opacity(0.8) }
-        case "jar":
-            if let j = (fin?.jars ?? []).first(where: { $0.goal != nil }) ?? fin?.jars.first {
-                Text(MoneyText.uah(j.balance)).font(.system(size: 26, weight: .semibold))
-                if let goal = j.goal { ProgressView(value: min(1, j.balance / goal)).tint(Theme.olive); Text("\(j.title) · \(Int(min(1, j.balance / goal) * 100))%").font(.system(size: 12)) }
-                else { Text(j.title).font(.system(size: 12)) }
-            } else { Text("…").font(.system(size: 17, weight: .bold)) }
-        case "film":
-            if let fl = d.film {
-                Text(fl.title).font(.system(size: 17, weight: .bold)).lineLimit(2)
-                Text(fl.season.map { "S\($0)E\(fl.episode ?? 0)" } ?? "фільм").font(.system(size: 12)).opacity(0.8)
-            } else { Text("Нічого зараз").font(.system(size: 17, weight: .bold)) }
-        case "evening":
-            if let t = today {
-                Text(eveningLabel(t)).font(.system(size: 16, weight: .bold))
-                if t.isFree {
-                    HStack(spacing: 4) {
-                        ForEach([("cinema", "Кіно"), ("home", "Вдома"), ("walk", "Гуляти")], id: \.0) { k in
-                            Button(k.1) { Task { let from: String? = t.freeFrom; try? await API.current().quickEvening(k.0, time: from ?? "19:30") } }
-                                .font(.system(size: 11.5, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 28).background(.white.opacity(0.2), in: Capsule())
-                        }
-                    }
-                }
-            } else { Text("…").font(.system(size: 17, weight: .bold)) }
-        case "pomodoro":
-            if let p = d.pomo.me {
-                Text(timerInterval: Date()...max(Date(), p.endsAt), countsDown: true).font(.system(size: 28, weight: .semibold)).monospacedDigit()
-                Text("ти · \(p.activity)").font(.system(size: 12)).opacity(0.8)
-            } else { Text("Фокус?").font(.system(size: 17, weight: .bold)); Text("тап — справа й час").font(.system(size: 12)).opacity(0.8) }
-            if let p = d.pomo.partner { Text("\(d.partner?.name ?? ""): \(p.activity)").font(.system(size: 11.5)).opacity(0.75) }
-        case "note":
-            if let n = d.note { Text(n.text.isEmpty ? "📷" : n.text).font(.system(size: 16, weight: .bold)).lineLimit(3); Text(d.partner?.name ?? "").font(.system(size: 12)).opacity(0.7) }
-            else { Text("Напиши \(d.partner?.name ?? "")").font(.system(size: 16, weight: .bold)) }
-        case "mood":
-            HStack(spacing: 18) {
-                VStack { Text(d.mood.me?.emoji ?? "·").font(.system(size: 34)); Text("ти").font(.system(size: 10)) }
-                VStack { Text(d.mood.partner?.emoji ?? "·").font(.system(size: 34)); Text(d.partner?.name ?? "").font(.system(size: 10)) }
-            }
-        case "turn":
-            Text(d.turn.name).font(.system(size: 26, weight: .semibold))
-            Text(d.turn.memberId == d.me.id ? "твоя черга" : "черга партнера").font(.system(size: 12)).opacity(0.8)
-        case "coin":
-            Text(d.coin.map { "\($0.question) — \($0.winnerName)" } ?? "Підкинь монетку").font(.system(size: 15, weight: .bold)).lineLimit(3)
-        case "memory":
-            Text(d.photo?.title ?? "Додай перше фото").font(.system(size: 16, weight: .bold)).lineLimit(2)
-        default: EmptyView()
-        }
-    }
 }
 
 // MARK: - sheets
@@ -645,53 +464,6 @@ struct CoinSheet: View {
         withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) { spin += 900; lift = 0 }
         try? await Task.sleep(for: .milliseconds(350))
         result = r.map { $0.winnerName }
-    }
-}
-
-/// Settings → Віджети: faces of the dashboard cubes (in order) and Spotify.
-struct WidgetsSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
-    @State private var faces: [String] = []
-    @State private var all: [String] = []
-    @State private var spot: SpotConnect?
-    private let names: [String: (String, String)] = ["event": ("Подія", "calendar"), "jar": ("Банка", "banknote"), "film": ("Фільм", "film"), "evening": ("Вечір", "moon.stars"),
-        "pomodoro": ("Помодоро", "timer"), "note": ("Записка", "note.text"), "mood": ("Настрій", "face.smiling"), "turn": ("Чия черга обирати фільм", "arrow.left.arrow.right"),
-        "coin": ("Монетка", "circle.circle"), "memory": ("Спогад", "photo")]
-    var body: some View {
-        NavigationStack {
-            SoftForm {
-                Section {
-                    ForEach(all, id: \.self) { f in
-                        Button { if let i = faces.firstIndex(of: f) { faces.remove(at: i) } else { faces.append(f) } } label: {
-                            HStack {
-                                Label(names[f]?.0 ?? f, systemImage: names[f]?.1 ?? "square")
-                                Spacer()
-                                if let i = faces.firstIndex(of: f) { Text("\(i + 1)").font(.system(size: 12, weight: .bold)).frame(width: 24, height: 24).background(Theme.olive, in: Circle()).foregroundStyle(Theme.cream) }
-                            }
-                        }
-                        .foregroundStyle(Theme.ink)
-                    }
-                } header: { Text("Грані кубиків") } footer: { Text("Порядок — як обираєш. Свайп по кубику перевертає на наступну грань; з однією гранню кубик не крутиться.") }
-                Section {
-                    if spot?.ready == true, let u = spot?.url?.asURL {
-                        Button { openURL(u) } label: { Label("Підключити мій Spotify", systemImage: "music.note") }
-                    } else {
-                        Text("Spotify ще не налаштовано на сервері — Віктор вставить ключі, і тут з'явиться кнопка.").font(.system(size: 13)).foregroundStyle(Theme.muted)
-                    }
-                } header: { Text("Spotify") }
-            }
-            .navigationTitle("Віджети").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Закрити") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Зберегти") { Task { try? await API.current().setWidgets(faces); dismiss() } } }
-            }
-            .task {
-                if let w = try? await API.current().widgets() { faces = w.faces; all = w.all ?? w.faces }
-                spot = try? await API.current().spotifyConnect()
-            }
-        }
-        .tint(Theme.olive)
     }
 }
 

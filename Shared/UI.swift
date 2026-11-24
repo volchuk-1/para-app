@@ -145,6 +145,9 @@ struct Avatar: View {
 }
 
 extension Date {
-    var dayTime: String { formatted(.dateTime.weekday(.wide).day().month(.wide).hour().minute()) }
-    var shortTime: String { formatted(.dateTime.hour().minute()) }
+    /// Always the 24-hour clock, whatever the phone's own setting.
+    private static let hm: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "uk_UA"); f.dateFormat = "HH:mm"; return f }()
+    private static let dayHm: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "uk_UA"); f.dateFormat = "EEEE, d MMMM, HH:mm"; return f }()
+    var dayTime: String { Date.dayHm.string(from: self) }
+    var shortTime: String { Date.hm.string(from: self) }
 }

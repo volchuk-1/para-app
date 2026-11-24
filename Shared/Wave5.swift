@@ -17,12 +17,17 @@ struct NoteItem: Codable, Hashable, Identifiable { let id: String; let memberId:
 struct TurnInfo: Codable, Hashable { let memberId: String; let name: String }
 struct CoinResult: Codable, Hashable { let question: String; let winnerId: String; let winnerName: String; var at: Date? = nil }
 struct DashMember: Codable, Hashable { let id: String; let name: String }
+/// A dashboard widget: size s | m | l, a stack of faces (several — it turns as a cube), own colours ("#rrggbb").
+struct WidgetColors: Codable, Hashable { var bg: String? = nil; var fg: String? = nil; var ac: String? = nil }
+struct DashWidget: Codable, Hashable, Identifiable { var id: String; var size: String; var faces: [String]; var colors: WidgetColors? = nil }
+struct LayoutResult: Decodable { let layout: [DashWidget] }
 struct Dashboard: Codable, Hashable {
     let me: DashMember; let partner: DashMember?
     let daysTogether: Int; let month: DashMonth; let wave: [Int]
     let next: DashEvent?; let soon: Bool; let photo: DashPhoto?; let film: DashFilm?
     let pomo: PomoPair; let mood: MoodPair; let note: NoteItem?; let myNote: NoteItem?
     let turn: TurnInfo; let coin: CoinResult?; let faces: [String]
+    var layout: [DashWidget]? = nil
 }
 struct WidgetPrefs: Codable { let faces: [String]; var all: [String]? = nil }
 struct StatsMonth: Codable, Hashable { let month: String; let dates: Int; let films: Int; let touches: Int }
@@ -44,6 +49,7 @@ struct TrailerResult: Decodable { let trailer: Trailer? }
 
 extension API {
     struct WidgetsBody: Encodable { let faces: [String] }
+    struct LayoutBody: Encodable { let layout: [DashWidget] }
     struct NoteBody: Encodable { let text: String }
     struct NoteResult: Decodable { let note: NoteItem }
     struct EmojiBody: Encodable { let emoji: String }
@@ -60,6 +66,7 @@ extension API {
     func dashboard() async throws -> Dashboard { try await get("/dashboard") }
     func widgets() async throws -> WidgetPrefs { try await get("/widgets") }
     func setWidgets(_ faces: [String]) async throws { let _: WidgetPrefs = try await send("PUT", "/widgets", WidgetsBody(faces: faces)) }
+    func setLayout(_ l: [DashWidget]) async throws -> [DashWidget] { (try await send("PUT", "/widgets", LayoutBody(layout: l)) as LayoutResult).layout }
     func sendNote(_ text: String) async throws -> NoteItem { (try await send("POST", "/notes", NoteBody(text: text)) as NoteResult).note }
     func noteURLPhoto(_ id: String, jpeg: Data) async throws { let _: NoteResult = try await upload("/notes/\(id)/photo", jpeg: jpeg) }
     func setMood(_ e: String) async throws { let _: Empty = try await send("PUT", "/mood", EmojiBody(emoji: e)) }

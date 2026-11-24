@@ -25,10 +25,12 @@ struct CalendarPage: View {
     @State private var sel: (day: String, a: Int, b: Int)?
     @State private var invite: String?
     private var cal: Calendar { Dock.calendar }
-    private let H0 = 7, H1 = 24, row: CGFloat = 52
+    private let H0 = 0, H1 = 24, row: CGFloat = 52
+    @State private var scrolledFor: String?
 
     var body: some View {
         ZStack(alignment: .top) {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     header
@@ -61,6 +63,9 @@ struct CalendarPage: View {
                 .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 130)
             }
             .scrollDisabled(sel != nil)
+            .onChange(of: days.map(\.date)) { _, _ in toNow(proxy) }
+            .onChange(of: mode) { _, _ in scrolledFor = nil }
+            }
             picker
         }
         .background(Theme.cream.ignoresSafeArea())
@@ -228,11 +233,13 @@ struct CalendarPage: View {
                         ForEach(H0..<H1, id: \.self) { h in hourRow(h, d: d, today: today, nowM: nowM) }
                     }
                 }
-                .contentShape(Rectangle())
-                .onTapGesture(coordinateSpace: .local) { p in tapHour(p.y, day: iso) }
-                .gesture(LongPressGesture(minimumDuration: 0.3).sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-                    .onChanged { v in if case .second(true, let drag) = v, let drag { dragHour(drag.location.y, day: iso) } }
-                    .onEnded { _ in if let s = sel { sel = nil; plan = PlanDraft(day: s.day, a: s.a * 60, b: s.b * 60) } })
+                .overlay(HourTouch(onTap: { y in tapHour(y, day: iso) }, onPress: { y, done in
+                    if done {
+                        if let s = sel { sel = nil; plan = PlanDraft(day: s.day, a: s.a * 60, b: s.b * 60) }
+                    } else {
+                        dragHour(y, day: iso)
+                    }
+                }))
             }
         }
     }
@@ -263,6 +270,19 @@ struct CalendarPage: View {
         .background(picked ? Theme.olive.opacity(0.18) : Theme.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(picked ? Theme.olive : Theme.coffee, lineWidth: picked ? 2 : (cur ? 1.5 : 0)))
         .grayscale(past ? 1 : 0).opacity(past ? 0.45 : 1)
+        .id("h\(h)")
+    }
+
+    /// Сьогодні opens at the current hour (two rows above it), once per day shown.
+    private func toNow(_ proxy: ScrollViewProxy) {
+        let iso = Evening.iso(anchor)
+        guard mode == .day, iso == Evening.iso(Date()), scrolledFor != iso, days.contains(where: { $0.date == iso }) else { return }
+        scrolledFor = iso
+        let h = max(0, cal.component(.hour, from: Date()) - 2)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            withAnimation(.easeOut(duration: 0.4)) { proxy.scrollTo("h\(h)", anchor: .top) }
+        }
     }
 
     private func hourChip(_ b: DayBlock, who: String, side: Int) -> some View {
@@ -665,5 +685,39 @@ enum LiveTasks {
         }
         let alive = items.filter { $0.end > now }
         if let d = try? JSONEncoder().encode(alive) { UserDefaults.standard.set(d, forKey: key) }
+    }
+}
+
+/// Tap and press-and-hold over the hour rows, done with UIKit recognisers: unlike a SwiftUI drag gesture
+/// they leave the page's own scrolling alone. `onPress(y, done)`: the finger's y while held, then done = true.
+struct HourTouch: UIViewRepresentable {
+    var onTap: (CGFloat) -> Void
+    var onPress: (CGFloat, Bool) -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView()
+        v.backgroundColor = .clear
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
+        let hold = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.hold(_:)))
+        hold.minimumPressDuration = 0.3
+        v.addGestureRecognizer(tap)
+        v.addGestureRecognizer(hold)
+        return v
+    }
+    func updateUIView(_ v: UIView, context: Context) { context.coordinator.parent = self }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject {
+        var parent: HourTouch
+        init(_ p: HourTouch) { parent = p }
+        @objc func tap(_ g: UITapGestureRecognizer) { parent.onTap(g.location(in: g.view).y) }
+        @objc func hold(_ g: UILongPressGestureRecognizer) {
+            let y = g.location(in: g.view).y
+            switch g.state {
+            case .began, .changed: parent.onPress(y, false)
+            case .ended, .cancelled, .failed: parent.onPress(y, true)
+            default: break
+            }
+        }
     }
 }
