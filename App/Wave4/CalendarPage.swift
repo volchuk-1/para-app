@@ -606,7 +606,7 @@ struct PlanSheet: View {
         NavigationStack {
             SoftForm {
                 Section {
-                    TextField("Що робиш? Спортзал, курси…", text: $title)
+                    TextField("Що робиш?", text: $title)
                     HStack(spacing: 6) {
                         ForEach(["Спортзал", "Справи", "Навчання", "Робота"], id: \.self) { x in
                             Button(x) { title = x }.font(.system(size: 13, weight: .semibold)).padding(.horizontal, 10).frame(height: 32)

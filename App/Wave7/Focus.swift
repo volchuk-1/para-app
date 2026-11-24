@@ -677,6 +677,10 @@ struct TimerScreen<Top: View>: View {
         .sensoryFeedback(.impact(weight: .heavy), trigger: pair?.me?.startedAt)
     }
 
+    /// Viktor's proportions: the digits block takes ~38% of the screen, the light card ~22%
+    private var screenH: CGFloat { UIScreen.main.bounds.height }
+    private var digitsH: CGFloat { max(180, screenH * 0.38 - 64) }
+
     private var name: String { prep.queue.isEmpty ? (pair?.me?.activity ?? prep.name) : prep.name }
 
     /// what the big card shows
@@ -696,15 +700,15 @@ struct TimerScreen<Top: View>: View {
         let label = "\(now.formatted(.dateTime.weekday(.abbreviated).locale(uk))) \(Dock.calendar.component(.day, from: now)) · \(name.uppercased())"
         return VStack(spacing: 0) {
             top(label)
-            Color.clear.frame(height: 236)
+            Color.clear.frame(height: digitsH)
                 .overlay {
                     if prep.view == .minimal {
                         Text(name).font(.system(size: fit(name) * 1.5, weight: .heavy)).multilineTextAlignment(.center).lineLimit(4).minimumScaleFactor(0.5).padding(.horizontal, 6)
                     } else {
                     Text(digits(me, left: left, total: total))
-                        .font(.system(size: 166, weight: .medium)).monospacedDigit().tracking(-3)
+                        .font(.system(size: digitsH / 1.4, weight: .medium)).monospacedDigit().tracking(-3)
                         .lineLimit(1).fixedSize()
-                        .scaleEffect(x: 0.62, y: 1.3)
+                        .scaleEffect(x: 0.56, y: 1.4)
                         .contentTransition(.numericText(countsDown: true))
                         .animation(.snappy, value: left)
                     }
@@ -754,6 +758,7 @@ struct TimerScreen<Top: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.top, 40).padding(.bottom, 20)
+        .frame(minHeight: screenH * 0.22 + 22, alignment: .top)
         .background(pale, in: UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))
         .foregroundStyle(dark)
     }

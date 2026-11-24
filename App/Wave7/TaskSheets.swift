@@ -170,7 +170,7 @@ struct NewTaskSheet: View {
                 }
                 .padding(.bottom, 4)
                 label("Що зробити")
-                TextField("Купити продукти", text: $title).font(.system(size: 16)).padding(.horizontal, 16).frame(height: 50)
+                TextField("Що зробити", text: $title).font(.system(size: 16)).padding(.horizontal, 16).frame(height: 50)
                     .background(Theme.cream, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 label("Кому")
                 PillPick(options: [("me", "Мені"), ("partner", partner), ("us", "Нам")], value: $who)
@@ -246,7 +246,7 @@ struct NewRoutineSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Нова рутина").font(.serif(28, .bold))
-                TextField("Ранок", text: $title).font(.system(size: 16)).padding(.horizontal, 16).frame(height: 50)
+                TextField("Назва", text: $title).font(.system(size: 16)).padding(.horizontal, 16).frame(height: 50)
                     .background(Theme.cream, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -264,7 +264,7 @@ struct NewRoutineSheet: View {
                 caption("Кроки")
                 ForEach($steps) { $s in
                     HStack(spacing: 6) {
-                        TextField("Англійська", text: $s.name).font(.system(size: 15)).padding(.horizontal, 12).frame(height: 46)
+                        TextField("Крок", text: $s.name).font(.system(size: 15)).padding(.horizontal, 12).frame(height: 46)
                             .background(Theme.cream, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         Stepper("\(s.minutes) хв", value: $s.minutes, in: 1...240, step: 5).font(.system(size: 14)).fixedSize()
                         if steps.count > 1 {

@@ -371,7 +371,7 @@ struct AddMemorySheet5: View {
                     }
                 }
                 Section {
-                    TextField("Назва — Невицький замок", text: $title)
+                    TextField("Назва", text: $title)
                     DatePicker("Коли", selection: $day, displayedComponents: .date).environment(\.locale, Locale(identifier: "uk_UA"))
                     TextField("Кілька слів", text: $note, axis: .vertical).lineLimit(1...4)
                 }

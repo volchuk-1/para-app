@@ -27,7 +27,7 @@ struct InviteEditor: View {
         NavigationStack {
             SoftForm {
                 Section {
-                    TextField("Що (вечеря на даху, кіно…)", text: $title)
+                    TextField("Що", text: $title)
                     DatePicker("Коли", selection: $start, in: Date()...)
                 }
                 Section {

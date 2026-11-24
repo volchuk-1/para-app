@@ -249,7 +249,7 @@ struct WishEditor: View {
                     .pickerStyle(.segmented)
                     TextField("Назва (якщо без посилання)", text: $title)
                     TextField("Ціна, ₴ (необов'язково)", text: $price).keyboardType(.decimalPad)
-                    TextField("Нотатка: розмір, колір…", text: $note)
+                    TextField("Нотатка", text: $note)
                 }
                 if let e = store.error { Section { Text(e).foregroundStyle(Theme.coffee) } }
             }

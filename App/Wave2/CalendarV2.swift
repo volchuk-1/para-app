@@ -402,7 +402,7 @@ struct ScheduleSheet: View {
                 } header: { Text("Мої змінні дні") } footer: { Text("Тап по дню: вихідний, робочий за графіком або свої години — для змінного графіка. Решта днів — як завжди.") }
                 Section("Нове правило") {
                     Picker("Що", selection: $kind) { Text("Робота").tag("work"); Text("Справа").tag("activity"); Text("Інколи").tag("sometimes") }.pickerStyle(.segmented)
-                    if kind != "work" { TextField("Назва (тренування, курси…)", text: $label) }
+                    if kind != "work" { TextField("Назва", text: $label) }
                     daysRow
                     DatePicker("Початок", selection: $start, displayedComponents: .hourAndMinute)
                     DatePicker("Кінець", selection: $end, displayedComponents: .hourAndMinute)

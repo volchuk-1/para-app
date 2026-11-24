@@ -49,7 +49,7 @@ struct InviteView: View {
         }
         .sheet(isPresented: $edit) { InviteEditor(existing: event) }
         .alert("Інший час?", isPresented: $askTime) {
-            TextField("Напр.: можна о 20:00?", text: $note)
+            TextField("Повідомлення", text: $note)
             Button("Надіслати") { Task { await answer(accept: false) } }
             Button("Скасувати", role: .cancel) {}
         }

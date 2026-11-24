@@ -488,7 +488,7 @@ struct NoteSheet: View {
                         Text(n.text)
                     }
                 }
-                Section("Пара слів для \(partner)") { TextField("Кава о 8? ☕", text: $text, axis: .vertical).lineLimit(2...5) }
+                Section("Пара слів для \(partner)") { TextField("Пара слів", text: $text, axis: .vertical).lineLimit(2...5) }
                 Section {
                     PhotosPicker(selection: $pick, matching: .images) {
                         if let image { Image(uiImage: image).resizable().scaledToFill().frame(height: 160).clipped().clipShape(RoundedRectangle(cornerRadius: 14)) }
@@ -523,7 +523,7 @@ struct CoinSheet: View {
         VStack(spacing: 16) {
             Text("Монетка").font(.serif(28, .bold)).frame(maxWidth: .infinity, alignment: .leading)
             Text("Підкидає сервер — ви обоє бачите той самий результат, \(partner) отримає сповіщення в боті.").font(.system(size: 14)).foregroundStyle(Theme.muted)
-            TextField("Хто миє посуд?", text: $q).padding(.horizontal, 14).frame(height: 46).background(Theme.cream, in: Capsule())
+            TextField("Питання", text: $q).padding(.horizontal, 14).frame(height: 46).background(Theme.cream, in: Capsule())
             Circle().fill(RadialGradient(colors: [Color(hex: 0xF2D08A), Color(hex: 0xC9A27E), Theme.coffee], center: .topLeading, startRadius: 4, endRadius: 120))
                 .frame(width: 120, height: 120)
                 .overlay(Text(result ?? "?").font(.system(size: 20, weight: .bold)).foregroundStyle(Theme.ink))

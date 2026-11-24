@@ -136,7 +136,7 @@ struct JarSheet: View {
                 Section {
                     Picker("Хто бачить", selection: $visibility) { Text("Обоє").tag("both"); Text("Лише я").tag("me"); Text("Сховати").tag("hidden") }.pickerStyle(.segmented)
                 } header: { Text("Хто бачить") } footer: { Text("«Лише я» — для сюрпризу \(partner). «Сховати» — для боргу й особистого.") }
-                Section("Для чого") { TextField("позаплановий відпочинок", text: $purpose) }
+                Section("Для чого") { TextField("Назва", text: $purpose) }
                 Section {
                     Picker("", selection: $withDate) { Text("Без дати").tag(false); Text("Є дата").tag(true) }.pickerStyle(.segmented)
                     if withDate { DatePicker("До", selection: $due, displayedComponents: .date).environment(\.locale, Locale(identifier: "uk_UA")) }
@@ -200,7 +200,7 @@ struct PeopleSheet: View {
                     if people.isEmpty { Text("Поки нікого.").foregroundStyle(Theme.muted) }
                 }
                 Section("Додати") {
-                    TextField("Ім'я — Мама", text: $name)
+                    TextField("Ім'я", text: $name)
                     TextField("Хто це — моя мама, подруга Дарини…", text: $relation)
                     Picker("День", selection: $day) { ForEach(1...31, id: \.self) { Text("\($0)").tag($0) } }
                     Picker("Місяць", selection: $month) { ForEach(1...12, id: \.self) { Text(months[$0 - 1]).tag($0) } }
@@ -289,8 +289,8 @@ struct TripSheet: View {
         NavigationStack {
             SoftForm {
                 Section("Куди") {
-                    TextField("Назва — Карпати", text: $trip.title)
-                    TextField("Місто — Яремче", text: Binding(get: { trip.place ?? "" }, set: { trip.place = $0 }))
+                    TextField("Назва", text: $trip.title)
+                    TextField("Місто", text: Binding(get: { trip.place ?? "" }, set: { trip.place = $0 }))
                 }
                 Section("Коли") {
                     Toggle("Є дати", isOn: $hasDates)
@@ -314,14 +314,14 @@ struct TripSheet: View {
                 Section("Житло") {
                     TextField("Назва", text: Binding(get: { trip.stay?.name ?? "" }, set: { stay { $0.name = $1 }($0) }))
                     TextField("Посилання", text: Binding(get: { trip.stay?.url ?? "" }, set: { stay { $0.url = $1.isEmpty ? nil : $1 }($0) })).keyboardType(.URL).textInputAutocapitalization(.never)
-                    TextField("Заїзд — 14:00", text: Binding(get: { trip.stay?.checkIn ?? "" }, set: { stay { $0.checkIn = $1.isEmpty ? nil : $1 }($0) }))
-                    TextField("Виїзд — 11:00", text: Binding(get: { trip.stay?.checkOut ?? "" }, set: { stay { $0.checkOut = $1.isEmpty ? nil : $1 }($0) }))
+                    TextField("Заїзд", text: Binding(get: { trip.stay?.checkIn ?? "" }, set: { stay { $0.checkIn = $1.isEmpty ? nil : $1 }($0) }))
+                    TextField("Виїзд", text: Binding(get: { trip.stay?.checkOut ?? "" }, set: { stay { $0.checkOut = $1.isEmpty ? nil : $1 }($0) }))
                     Toggle("Заброньовано", isOn: Binding(get: { trip.stay?.booked ?? false }, set: { v in var s = trip.stay ?? TripStay(); s.booked = v; trip.stay = s }))
                 }
                 Section("Що взяти") {
                     ForEach(trip.packing.indices, id: \.self) { i in Toggle(trip.packing[i].t, isOn: $trip.packing[i].done) }
                         .onDelete { trip.packing.remove(atOffsets: $0) }
-                    HStack { TextField("Термос, шапки…", text: $newItem); Button("Додати") { add() }.disabled(newItem.isEmpty) }
+                    HStack { TextField("Що взяти", text: $newItem); Button("Додати") { add() }.disabled(newItem.isEmpty) }
                 }
                 Section("План по днях") {
                     ForEach(Array(trip.plan.enumerated()), id: \.offset) { _, p in
@@ -329,7 +329,7 @@ struct TripSheet: View {
                     }
                     .onDelete { trip.plan.remove(atOffsets: $0) }
                     DatePicker("День", selection: $planDay, displayedComponents: .date).environment(\.locale, Locale(identifier: "uk_UA"))
-                    HStack { TextField("Водоспад, чани…", text: $planText); Button("Додати") { trip.plan.append(PlanItem(day: Evening.iso(planDay), text: planText)); planText = "" }.disabled(planText.isEmpty) }
+                    HStack { TextField("Що подивитись", text: $planText); Button("Додати") { trip.plan.append(PlanItem(day: Evening.iso(planDay), text: planText)); planText = "" }.disabled(planText.isEmpty) }
                 }
                 if !trip.id.isEmpty {
                     Section("Погода") {
