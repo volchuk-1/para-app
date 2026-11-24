@@ -23,6 +23,7 @@ struct CalendarPage: View {
     @State private var plan: PlanDraft?
     @State private var showSchedule = false
     @State private var sel: (day: String, a: Int, b: Int)?
+    @State private var invite: String?
     private var cal: Calendar { Dock.calendar }
     private let H0 = 7, H1 = 24, row: CGFloat = 52
 
@@ -33,7 +34,7 @@ struct CalendarPage: View {
                     header
                     Group {
                         switch mode {
-                        case .day, .week: grid
+                        case .day, .week: strips
                         case .month: monthGrid
                         case .year: yearGrid
                         }
@@ -51,7 +52,7 @@ struct CalendarPage: View {
                         .padding(14).background(Theme.ink, in: RoundedRectangle(cornerRadius: 20, style: .continuous)).foregroundStyle(Theme.paper)
                     }
                     if mode == .day || mode == .week {
-                        Text("Тап по годині — до кінця години. Затисни годину й тягни вниз — кілька годин. Затисни кнопку вгорі — Тиждень, Місяць, Рік.")
+                        Text("♥ — вечір, коли ви обоє вільні: тап — запросити. Затисни кнопку вгорі — Тиждень, Місяць, Рік.")
                             .font(.system(size: 12.5)).foregroundStyle(Theme.muted)
                     }
                 }
@@ -67,6 +68,7 @@ struct CalendarPage: View {
         .onChange(of: anchor) { _, _ in Task { await load() } }
         .sheet(item: $plan, onDismiss: { Task { await load() } }) { p in PlanSheet(draft: p) }
         .sheet(isPresented: $showSchedule, onDismiss: { Task { await load() } }) { ScheduleSheet() }
+        .fullScreenCover(item: Binding(get: { invite.map { DayID(id: $0) } }, set: { invite = $0?.id })) { d in InviteBooking(start: .day(d.id)) }
         .sensoryFeedback(.selection, trigger: hot)
     }
 
@@ -156,6 +158,80 @@ struct CalendarPage: View {
     private func move(_ n: Int) {
         let unit: Calendar.Component = mode == .day ? .day : mode == .week ? .weekOfYear : mode == .month ? .month : .year
         anchor = cal.date(byAdding: unit, value: n, to: anchor) ?? anchor
+    }
+
+    // MARK: Сьогодні / Тиждень as before: both of us as day strips, ♥ on a free evening
+
+    private var strips: some View {
+        let list = gridDays
+        let today = Evening.iso(Date())
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                legendItem("робота", Color(hex: 0xD8CFC2)); legendItem("справи", Color(hex: 0xA59E91))
+                legendItem("події", Theme.coffee); legendItem("наше", Theme.olive)
+            }
+            .font(.system(size: 11.5)).foregroundStyle(Theme.muted)
+            ForEach(list) { d in
+                Button {
+                    if mode == .week { withAnimation(.snappy) { anchor = Evening.date(d.date) ?? anchor; mode = .day } }
+                } label: { stripRow(d, today: today) }
+                .buttonStyle(.plain)
+            }
+            if list.isEmpty { ProgressView().tint(Theme.olive).frame(maxWidth: .infinity).padding(20) }
+            if mode == .day { dayDetails(today: today) }
+        }
+    }
+
+    private func legendItem(_ t: String, _ c: Color) -> some View {
+        HStack(spacing: 5) { RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 12, height: 8); Text(t) }
+    }
+
+    private func stripRow(_ d: DayPlan, today: String) -> some View {
+        let date = Evening.date(d.date) ?? Date()
+        let uk = Locale(identifier: "uk_UA")
+        let bdays = people.filter { $0.birthday == String(d.date.suffix(5)) }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(date.formatted(.dateTime.weekday(.abbreviated).locale(uk))).font(.system(size: 15, weight: .semibold))
+                + Text(" \(cal.component(.day, from: date)) \(date.formatted(.dateTime.month(.abbreviated).locale(uk)))\(d.date == today ? " · сьогодні" : "")").font(.system(size: 13)).foregroundColor(Theme.muted)
+                Spacer()
+                EveningBadge(day: d) { if d.isFree && d.date >= today { invite = d.date } }
+                    .opacity(d.date < today ? 0.5 : 1)
+            }
+            DayLane(letter: String(state.me?.name.prefix(1) ?? "Я"), blocks: d.blocks.me, off: d.meOff, known: d.meKnown ?? true)
+            DayLane(letter: String(state.partner?.name.prefix(1) ?? "?"), blocks: d.blocks.partner, off: d.partnerOff, known: d.partnerKnown ?? true)
+            Text(Evening.note(d, partner: state.partner?.name ?? "")).font(.system(size: 12)).foregroundStyle(Theme.muted)
+            ForEach(bdays) { b in Text("🎂 \(b.name)" + (b.turns.map { " · \($0)" } ?? "")).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.coffee) }
+        }
+        .padding(12)
+        .background(d.date == today ? Color(hex: 0xF3E6D8) : Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.coffee, lineWidth: d.date == today ? 1.5 : 0))
+        .grayscale(d.date < today ? 1 : 0).opacity(d.date < today ? 0.5 : 1)
+    }
+
+    /// Сьогодні: the day's events and a quick plan with the olive timer.
+    @ViewBuilder private func dayDetails(today: String) -> some View {
+        let iso = Evening.iso(anchor)
+        let evs = store.events.filter { Evening.iso($0.startsAt) == iso }.sorted { $0.startsAt < $1.startsAt }
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Події").font(.system(size: 15, weight: .bold))
+            ForEach(evs) { e in EventRow(event: e) }
+            if evs.isEmpty { Text("Цього дня подій нема.").font(.system(size: 13)).foregroundStyle(Theme.muted) }
+            if iso >= today {
+                Button {
+                    let now = cal.component(.hour, from: Date()) * 60 + cal.component(.minute, from: Date())
+                    let isToday = iso == today
+                    let a = isToday ? now : 18 * 60
+                    let b = isToday ? min(24 * 60, (now / 60 + 1) * 60) : 19 * 60
+                    plan = PlanDraft(day: iso, a: a, b: max(b, a + 15))
+                } label: {
+                    Label("Справа з таймером", systemImage: "timer").font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity).frame(height: 44).background(Theme.olive, in: Capsule()).foregroundStyle(Theme.cream)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14).background(Theme.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     // MARK: hour grid (day / week)
