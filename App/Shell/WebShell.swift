@@ -34,7 +34,10 @@ struct ShellScreen: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: shell.ready)
-        .onAppear { shell.start() }
+        .foregroundStyle(Color(hex: 0x17202C))
+        .onAppear { shell.start(); state.whiteStatusBar = !shell.darkStatusBar }
+        .onDisappear { state.whiteStatusBar = false }
+        .onChange(of: shell.darkStatusBar) { _, dark in state.whiteStatusBar = !dark }
     }
 }
 
@@ -42,6 +45,8 @@ struct ShellScreen: View {
 final class ShellModel: NSObject, ObservableObject {
     @Published var ready = false
     @Published var failed: String?
+    /// Dark digits in the status bar over a light top («Налаштування»), white over the rest.
+    @Published var darkStatusBar = false
 
     fileprivate var web: WKWebView?
     private let location = OneShotLocation()
@@ -77,6 +82,11 @@ final class ShellModel: NSObject, ObservableObject {
         ucc.add(WeakHandler(self), name: "dv")
         ucc.addUserScript(WKUserScript(source: Self.keyScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
         cfg.userContentController = ucc
+        // Telegram's own script is not needed here (native.js stands in for it): no request to telegram.org at every start
+        let rules = #"[{"trigger":{"url-filter":"^https://telegram[.]org/"},"action":{"type":"block"}}]"#
+        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "dv-no-telegram", encodedContentRuleList: rules) { list, _ in
+            if let list { ucc.add(list) }
+        }
 
         let w = WKWebView(frame: .zero, configuration: cfg)
         w.navigationDelegate = self
@@ -148,6 +158,8 @@ final class ShellModel: NSObject, ObservableObject {
             resolve(m["id"] as? Int ?? 0, nil)   // the photo bridge comes with the next step (PhotoKit, date and place)
         case "motion":
             (m["on"] as? Bool ?? false) ? startMotion() : motion.stopAccelerometerUpdates()
+        case "statusbar":
+            darkStatusBar = m["dark"] as? Bool ?? false
         case "changed":
             WidgetCenter.shared.reloadAllTimelines()
         case "settings":

@@ -7,6 +7,8 @@ final class AppState: ObservableObject {
     @Published private(set) var partner: Member?
     @Published var offline = false
     @Published var banner: String?
+    /// The shell is on screen and its top is dark: the status bar digits must be white.
+    @Published var whiteStatusBar = false
     /// A link shared into the app (`davincit://share?url=…`) waiting to be handled.
     @Published var pendingShare: URL?
 

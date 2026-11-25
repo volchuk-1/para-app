@@ -13,7 +13,7 @@ struct DaVincitApp: App {
             RootView()
                 .environmentObject(state)
                 .tint(Theme.olive)
-                .preferredColorScheme(.light)
+                .preferredColorScheme(state.whiteStatusBar ? .dark : .light)
                 .onOpenURL { state.handle(url: $0) }
         }
     }
