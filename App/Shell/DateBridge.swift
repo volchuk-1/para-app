@@ -4,6 +4,7 @@ import MapKit
 import Photos
 import ActivityKit
 import UIKit
+import EventKit
 
 /// «Де я» on the way to a date. Works only while a date is near and both of us agreed (the server decides and
 /// answers 403 / 409 otherwise — then this stops by itself). One point every ~40 seconds goes to our own server,
@@ -161,6 +162,30 @@ enum PhotoSaver {
             }, completionHandler: { ok, _ in
                 DispatchQueue.main.async { done(ok) }
             })
+        }
+    }
+}
+
+/// «У календар iPhone»: the date goes into the phone's own calendar with a reminder an hour before.
+/// The app may only add events — it cannot read the calendar.
+enum CalendarAdd {
+    static func add(title: String, start: Date, end: Date, place: String, done: @escaping (Bool) -> Void) {
+        let store = EKEventStore()
+        store.requestWriteOnlyAccessToEvents { ok, _ in
+            guard ok else {
+                DispatchQueue.main.async { done(false) }
+                return
+            }
+            let event = EKEvent(eventStore: store)
+            event.title = title
+            event.startDate = start
+            event.endDate = end
+            event.location = place.isEmpty ? nil : place
+            event.calendar = store.defaultCalendarForNewEvents
+            event.addAlarm(EKAlarm(relativeOffset: -3600))
+            var saved = true
+            do { try store.save(event, span: .thisEvent) } catch { saved = false }
+            DispatchQueue.main.async { done(saved) }
         }
     }
 }

@@ -207,6 +207,8 @@ struct ParaWidgets: WidgetBundle {
         TodayWidget()
         PartnerPhotoWidget()
         BoilerWidget()
+        VoiceNoteWidget()
+        SnapWidget()
         PingLiveActivity()
         DateLiveActivity()
         TaskLiveActivity()

@@ -11,6 +11,8 @@ final class AppState: ObservableObject {
     @Published var whiteStatusBar = false
     /// A link shared into the app (`davincit://share?url=…`) waiting to be handled.
     @Published var pendingShare: URL?
+    /// A tap on a widget: «note», «snap», «moment», «date».
+    @Published var pendingLink: String?
 
     var isPaired: Bool { KeyStore.deviceKey != nil }
     var api: API { API.current() }
@@ -67,6 +69,8 @@ final class AppState: ObservableObject {
            let s = comps.queryItems?.first(where: { $0.name == "url" })?.value,
            let shared = URL(string: s) {
             pendingShare = shared
+        } else if let host = url.host, ["note", "snap", "moment", "date", "boiler"].contains(host) {
+            pendingLink = host
         }
     }
 }

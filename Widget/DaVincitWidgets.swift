@@ -193,6 +193,7 @@ struct PhotoWidgetView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(.white)
+        .widgetURL(URL(string: "davincit://moment"))
         .containerBackground(for: .widget) {
             ZStack {
                 Color(hex: 0x91798F)
@@ -262,6 +263,7 @@ struct BoilerProvider: TimelineProvider {
 }
 
 struct BoilerWidgetView: View {
+    @Environment(\.widgetFamily) private var family
     let entry: BoilerEntry
 
     private var state: String {
@@ -271,6 +273,22 @@ struct BoilerWidgetView: View {
     }
 
     var body: some View {
+        if family == .accessoryCircular { lock } else { home }
+    }
+
+    /// The lock screen: one round button that switches the boiler.
+    private var lock: some View {
+        Button(intent: BoilerToggleIntent()) {
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: entry.on ? "flame.fill" : "power").font(.system(size: 20, weight: .semibold))
+            }
+        }
+        .buttonStyle(.plain)
+        .containerBackground(for: .widget) { Color.clear }
+    }
+
+    private var home: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("КОТЕЛ").font(.system(size: 10, weight: .semibold)).tracking(1.6).opacity(0.7)
             Text(state).font(.system(size: 21, weight: .semibold, design: .serif)).lineLimit(1).minimumScaleFactor(0.7)
@@ -306,6 +324,70 @@ struct BoilerWidget: Widget {
         }
         .configurationDisplayName("Котел")
         .description("Стан котла і кнопка, що його перемикає.")
-        .supportedFamilies([.systemSmall])
+        .supportedFamilies([.systemSmall, .accessoryCircular])
+    }
+}
+
+// MARK: - quick starts for the lock screen: a voice note, a photo for the other one
+
+struct QuickEntry: TimelineEntry { let date: Date }
+
+struct QuickProvider: TimelineProvider {
+    func placeholder(in context: Context) -> QuickEntry { QuickEntry(date: .now) }
+    func getSnapshot(in context: Context, completion: @escaping (QuickEntry) -> Void) { completion(QuickEntry(date: .now)) }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<QuickEntry>) -> Void) {
+        completion(Timeline(entries: [QuickEntry(date: .now)], policy: .never))
+    }
+}
+
+struct QuickView: View {
+    @Environment(\.widgetFamily) private var family
+    let icon: String
+    let title: String
+    let link: String
+    let color: Color
+
+    var body: some View {
+        Group {
+            if family == .accessoryCircular {
+                ZStack {
+                    AccessoryWidgetBackground()
+                    Image(systemName: icon).font(.system(size: 20, weight: .semibold))
+                }
+                .containerBackground(for: .widget) { Color.clear }
+            } else {
+                VStack(alignment: .leading) {
+                    Image(systemName: icon).font(.system(size: 30, weight: .semibold))
+                    Spacer(minLength: 0)
+                    Text(title).font(.system(size: 19, weight: .semibold, design: .serif)).lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .foregroundStyle(.white)
+                .containerBackground(for: .widget) { color }
+            }
+        }
+        .widgetURL(URL(string: link))
+    }
+}
+
+struct VoiceNoteWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "voicenote", provider: QuickProvider()) { _ in
+            QuickView(icon: "mic.fill", title: "Нотатка голосом", link: "davincit://note", color: Color(hex: 0x5B7E98))
+        }
+        .configurationDisplayName("Нотатка голосом")
+        .description("Одразу починає запис.")
+        .supportedFamilies([.systemSmall, .accessoryCircular])
+    }
+}
+
+struct SnapWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "snap", provider: QuickProvider()) { _ in
+            QuickView(icon: "camera.fill", title: "Миттєвість", link: "davincit://snap", color: Color(hex: 0xA97B60))
+        }
+        .configurationDisplayName("Зняти миттєвість")
+        .description("Фото з підписом для другої половини.")
+        .supportedFamilies([.systemSmall, .accessoryCircular])
     }
 }

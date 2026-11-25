@@ -33,6 +33,7 @@ targets:
             CFBundleURLSchemes: [davincit]
         NSSupportsLiveActivities: true
         UIBackgroundModes: [location]
+        NSCalendarsWriteOnlyAccessUsageDescription: "Щоб додати побачення у календар телефона з нагадуванням."
         NSPhotoLibraryAddUsageDescription: "Щоб зберегти фото від партнера у «Фото» на телефоні."
         NSLocationAlwaysAndWhenInUseUsageDescription: "Лише дорогою на побачення і лише з вашої згоди: показати партнерові, де ви, і порахувати час у дорозі."
         CADisableMinimumFrameDurationOnPhone: true

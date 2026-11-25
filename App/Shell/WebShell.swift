@@ -38,6 +38,10 @@ struct ShellScreen: View {
         .onAppear { shell.start(); state.whiteStatusBar = !shell.darkStatusBar }
         .onDisappear { state.whiteStatusBar = false }
         .onChange(of: shell.darkStatusBar) { _, dark in state.whiteStatusBar = !dark }
+        .onChange(of: state.pendingLink) { _, link in
+            if let link { shell.open(link: link); state.pendingLink = nil }
+        }
+        .task { if let link = state.pendingLink { shell.open(link: link); state.pendingLink = nil } }
     }
 }
 
@@ -52,6 +56,10 @@ final class ShellModel: NSObject, ObservableObject {
     private let location = OneShotLocation()
     private let motion = CMMotionManager()
     private var started = false
+    /// The pages say whether there is anywhere to go back to (not on the Основа): the edge swipe moves the page only then.
+    private var canBack = false
+    /// A link from a widget that came before the pages were ready.
+    private var waitingLink: String?
 
     func start() {
         guard !started else { return }
@@ -120,6 +128,7 @@ final class ShellModel: NSObject, ObservableObject {
     /// «Назад» from the left edge: the page follows the finger, then goes away (or springs back).
     @objc private func edgeSwipe(_ g: UIScreenEdgePanGestureRecognizer) {
         guard let v = g.view else { return }
+        guard canBack else { v.transform = .identity; return }
         let x = max(0, g.translation(in: v.superview).x)
         switch g.state {
         case .changed:
@@ -143,6 +152,12 @@ final class ShellModel: NSObject, ObservableObject {
         default:
             break
         }
+    }
+
+    /// A widget was tapped: «note» starts a voice note, «snap» the camera for a quick photo, «moment» the last photo, «date» the date of today.
+    func open(link: String) {
+        guard ready else { waitingLink = link; return }
+        call("DV.deepLink", [link])
     }
 
     /// Calls a function of the pages with JSON arguments: `call("DV.dateEta", [id, result])`.
@@ -172,6 +187,9 @@ final class ShellModel: NSObject, ObservableObject {
         switch t {
         case "ready":
             ready = true
+            if let l = waitingLink { waitingLink = nil; open(link: l) }
+        case "back":
+            canBack = m["on"] as? Bool ?? false
         case "haptic":
             Haptics.play(kind: m["kind"] as? String ?? "", style: m["style"] as? String ?? "")
         case "open":
@@ -206,6 +224,12 @@ final class ShellModel: NSObject, ObservableObject {
         case "savePhoto":
             if let s = m["data"] as? String, let d = Data(base64Encoded: s) {
                 PhotoSaver.save(d) { [weak self] ok in self?.call("DV.photoSaved", [ok]) }
+            }
+        case "calendarAdd":
+            if let title = m["title"] as? String, let a = m["startsAt"] as? Double {
+                let start = Date(timeIntervalSince1970: a / 1000)
+                let end = (m["endsAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) } ?? start.addingTimeInterval(3 * 3600)
+                CalendarAdd.add(title: title, start: start, end: end, place: m["place"] as? String ?? "") { [weak self] ok in self?.call("DV.calendarAdded", [ok]) }
             }
         case "dateTrack":
             if m["on"] as? Bool ?? false, let id = m["id"] as? String {
