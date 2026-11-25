@@ -80,7 +80,8 @@ struct WaveBar: View {
                     let o = g.frame(in: .global).origin
                     let w = CGFloat(ex.count) * 58 + CGFloat(ex.count - 1) * 8 + 16, h: CGFloat = 74
                     extrasPopup(ex)
-                        .position(x: min(cf.maxX + 10, UIScreen.main.bounds.width - 8) - w / 2 - o.x, y: cf.minY - 14 - h / 2 - o.y)
+                        // near the left edge it grows to the right instead of running off the screen
+                        .position(x: max(8 + w / 2, min(cf.maxX + 10, UIScreen.main.bounds.width - 8) - w / 2) - o.x, y: cf.minY - 14 - h / 2 - o.y)
                         .transition(.modifier(active: PopIn(shown: false), identity: PopIn(shown: true)))
                 }
             }
