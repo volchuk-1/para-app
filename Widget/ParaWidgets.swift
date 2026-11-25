@@ -110,7 +110,9 @@ struct DateLiveActivity: Widget {
                 Image(systemName: "heart.fill").font(.title2).foregroundStyle(cream)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(context.attributes.title).font(.headline).foregroundStyle(cream).lineLimit(1)
-                    if !context.attributes.place.isEmpty {
+                    if let who = context.state.partner, !who.isEmpty {
+                        Text(who).font(.caption.weight(.semibold)).foregroundStyle(cream).lineLimit(1)
+                    } else if !context.attributes.place.isEmpty {
                         Text(context.attributes.place).font(.caption).foregroundStyle(cream.opacity(0.8)).lineLimit(1)
                     }
                 }
@@ -132,7 +134,8 @@ struct DateLiveActivity: Widget {
                     Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true).opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час іти ❤").fixedSize() } }.monospacedDigit()
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    if !context.attributes.place.isEmpty { Text(context.attributes.place).font(.caption) }
+                    if let who = context.state.partner, !who.isEmpty { Text(who).font(.caption.weight(.semibold)) }
+                    else if !context.attributes.place.isEmpty { Text(context.attributes.place).font(.caption) }
                 }
             } compactLeading: {
                 Image(systemName: "heart.fill").foregroundStyle(.pink)
@@ -201,7 +204,9 @@ struct TaskLiveActivity: Widget {
 @main
 struct ParaWidgets: WidgetBundle {
     var body: some Widget {
-        NoteWidget()
+        TodayWidget()
+        PartnerPhotoWidget()
+        BoilerWidget()
         PingLiveActivity()
         DateLiveActivity()
         TaskLiveActivity()

@@ -41,6 +41,8 @@ struct TaskAttributes: ActivityAttributes {
 struct DateAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         var startsAt: Date
+        /// «Дарина · 6 хв · 1,2 км» while we are both on the way (only with the consent of each of us).
+        var partner: String? = nil
     }
     var eventId: String
     var title: String

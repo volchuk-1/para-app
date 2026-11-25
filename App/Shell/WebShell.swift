@@ -117,9 +117,38 @@ final class ShellModel: NSObject, ObservableObject {
         return "try{localStorage.setItem('dv-key-tg',\(json)[0])}catch(e){}"
     }
 
+    /// «Назад» from the left edge: the page follows the finger, then goes away (or springs back).
     @objc private func edgeSwipe(_ g: UIScreenEdgePanGestureRecognizer) {
-        guard g.state == .ended, g.translation(in: g.view).x > 60 else { return }
-        js("window.DVNative&&window.DVNative.back()")
+        guard let v = g.view else { return }
+        let x = max(0, g.translation(in: v.superview).x)
+        switch g.state {
+        case .changed:
+            v.transform = CGAffineTransform(translationX: x, y: 0)
+        case .ended, .cancelled, .failed:
+            let go = g.state == .ended && (x > 90 || g.velocity(in: v.superview).x > 600)
+            if go {
+                UIView.animate(withDuration: 0.18, delay: 0, options: .curveEaseOut, animations: {
+                    v.transform = CGAffineTransform(translationX: v.bounds.width, y: 0)
+                }, completion: { _ in
+                    self.js("window.DVNative&&window.DVNative.back()")
+                    v.alpha = 0
+                    v.transform = .identity
+                    UIView.animate(withDuration: 0.22, delay: 0.06, options: .curveEaseOut, animations: { v.alpha = 1 }, completion: nil)
+                })
+            } else {
+                UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [], animations: {
+                    v.transform = .identity
+                }, completion: nil)
+            }
+        default:
+            break
+        }
+    }
+
+    /// Calls a function of the pages with JSON arguments: `call("DV.dateEta", [id, result])`.
+    private func call(_ fn: String, _ args: [Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: args), let json = String(data: data, encoding: .utf8) else { return }
+        js("window.DV&&\(fn)&&\(fn).apply(null,\(json))")
     }
 
     private func js(_ source: String) {
@@ -164,6 +193,34 @@ final class ShellModel: NSObject, ObservableObject {
             WidgetCenter.shared.reloadAllTimelines()
         case "settings":
             if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+        case "eta":
+            // how long the way to the place of a date is: on foot and by car, from where I am now
+            let id = m["id"] as? String ?? ""
+            let place = m["place"] as? String ?? ""
+            location.request { [weak self] c in
+                Task { @MainActor in
+                    let r = await RouteETA.find(place: place, from: c)
+                    self?.call("DV.dateEta", [id, r])
+                }
+            }
+        case "savePhoto":
+            if let s = m["data"] as? String, let d = Data(base64Encoded: s) {
+                PhotoSaver.save(d) { [weak self] ok in self?.call("DV.photoSaved", [ok]) }
+            }
+        case "dateTrack":
+            if m["on"] as? Bool ?? false, let id = m["id"] as? String {
+                DateTracker.shared.start(id: id, partner: m["name"] as? String ?? "", eta: m["eta"] as? Int)
+            } else {
+                DateTracker.shared.stop()
+            }
+        case "dateActivity":
+            if let id = m["id"] as? String {
+                if m["on"] as? Bool ?? true, let ms = m["startsAt"] as? Double {
+                    DateActivity.start(eventId: id, title: m["title"] as? String ?? "", place: m["place"] as? String ?? "", startsAt: Date(timeIntervalSince1970: ms / 1000))
+                } else {
+                    DateActivity.end(eventId: id)
+                }
+            }
         default:
             break
         }
