@@ -32,7 +32,8 @@ targets:
           - CFBundleURLName: com.volchuk.para
             CFBundleURLSchemes: [davincit]
         NSSupportsLiveActivities: true
-        NSCameraUsageDescription: "Камера потрібна, щоб відсканувати штрихкод книжки."
+        NSCameraUsageDescription: "Камера потрібна, щоб відсканувати штрихкод книжки і зняти фото для гри."
+        NSPhotoLibraryUsageDescription: "Фото з галереї — для спогадів, аватарки і гри «Три в ряд»."
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
     entitlements:
       path: App/Para.entitlements

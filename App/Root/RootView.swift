@@ -105,7 +105,7 @@ struct MainView: View {
                 case .money: MoneyPage()
                 case .evening: EveningPage()
                 case .cinema: CinemaPage()
-                case .games: ScrollView { VStack(alignment: .leading, spacing: 14) { PageTitle(plain: "Ігри", italic: "для двох"); EmptyCard(text: "Картки й інші ігри переїдуть сюди згодом.") }.padding(.horizontal, 18).padding(.top, 8) }.background(Theme.cream.ignoresSafeArea())
+                case .games: GamesPage()
                 }
             }
             .frame(width: UIScreen.main.bounds.width).frame(maxHeight: .infinity)

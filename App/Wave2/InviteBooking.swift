@@ -484,7 +484,7 @@ struct MePage: View {
                 PageTitle(plain: state.me?.name ?? "", italic: "& \(state.partner?.name ?? "")", sub: "Разом у DaVincit")
                 row("gearshape.fill", "Налаштування", "ім'я, код пари, перевірка острівця", openSettings)
                 row("dollarsign.circle.fill", "Фінанси", "банки monobank і спільна ціль") { page = .finance }
-                row("gamecontroller.fill", "Ігри", "згодом") { page = .games }
+                row("gamecontroller.fill", "Ігри", "для двох") { page = .games }
             }
             .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 120)
         }
