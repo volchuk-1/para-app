@@ -520,6 +520,7 @@ struct DashListPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            BoilerCard()
             todayTile
             tasksBlock
             if let w = d.watching?.first ?? d.film { watchRow(w) }

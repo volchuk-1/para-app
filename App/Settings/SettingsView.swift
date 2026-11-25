@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var mix = false
     @State private var confirmSpotOff = false
     @State private var avatarPick: PhotosPickerItem?
+    @AppStorage("dv-nav") private var navMode = "bar"
     /// shown as a whole screen from the right: «Назад» closes it
     var onClose: (() -> Void)? = nil
     private func close() { if let onClose { onClose() } else { dismiss() } }
@@ -117,6 +118,12 @@ struct SettingsView: View {
     // MARK: Системні
 
     @ViewBuilder private var system: some View {
+        Section {
+            Picker("Перемикання сторінок", selection: $navMode) {
+                Text("Навбар").tag("bar"); Text("Обидва").tag("both"); Text("Колесо").tag("wheel")
+            }
+            .pickerStyle(.segmented)
+        } header: { Text("Перемикання сторінок") } footer: { Text("Колесо — затисни вільне місце або смужку справа, веди пальцем, відпусти на сторінці.") }
         Section {
             if let code {
                 Text(code)

@@ -103,6 +103,7 @@ struct DashboardPage: View {
                 if let error { Text(error).font(.system(size: 13)).foregroundStyle(Theme.coffee) }
             }
             .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 130)
+            .wheelHold()
         }
         // the other page of Головна always starts from its top
         .onChange(of: homePage) { _, _ in withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("dashTop", anchor: .top) } }

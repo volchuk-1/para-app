@@ -46,8 +46,10 @@ struct MainView: View {
     @State private var focusMode: FocusMode = .tasks
     @State private var focusPicking = false
     @State private var bellOpen = false
+    @ObservedObject private var wheel = WheelNav.shared
+    @AppStorage("dv-nav") private var navMode = "bar"
     /// the timer of «Справи» is a whole dark screen: no bar over it
-    private var noBar: Bool { (page == .tasks || page == .pomo) && (focusMode == .timer || focusPicking) }
+    private var noBar: Bool { (page == .tasks || page == .pomo) && (focusMode == .timer || focusPicking) || navMode == "wheel" }
     @State private var calendarDay = Calendar.current.startOfDay(for: Date())
     @State private var wishOwner = ""
     @State private var menu: MeAction?
@@ -130,6 +132,17 @@ struct MainView: View {
             }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.9), value: menu == .settings)
+        // the wheel of pages: from any empty spot of the main screens, and always from the strip at the right edge
+        .overlay { if navMode != "bar" && menu != .settings && !(page == .tasks && focusMode == .timer) { WheelEdge() } }
+        .overlay { if wheel.open { WheelOverlay() } }
+        .animation(.easeOut(duration: 0.25), value: wheel.open)
+        .onAppear {
+            WheelNav.shared.current = page
+            WheelNav.shared.onPick = { it in
+                if let p = it.page { page = p; if p == .tasks { focusMode = .tasks } } else { withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) { menu = .settings } }
+            }
+        }
+        .onChange(of: page) { _, p in WheelNav.shared.current = p }
         // notifications grow out of the bell
         .overlay { if bellOpen { BellPanel { bellOpen = false } } }
         .overlay(alignment: .topTrailing) {

@@ -136,6 +136,7 @@ struct FocusPage: View {
                         if mode == .tasks { tasksView } else { routinesView }
                     }
                     .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 130)
+                    .wheelHold()
                 }
                 .scrollDisabled(sliding)
                 .background(Theme.cream.ignoresSafeArea())
