@@ -30,7 +30,8 @@ enum GamesWeb {
         return c.url!
     }
     static func loadIfNeeded() {
-        if shared.url == nil { shared.load(URLRequest(url: url)) }
+        // first time, or the page got lost (a blank web view after the system freed its memory)
+        if shared.url == nil || shared.url?.host != url.host || shared.isLoading == false && shared.title?.isEmpty != false { shared.load(URLRequest(url: url)) }
     }
 
     /// alert() and confirm() of the page (without this confirm() silently says «no» and «Здатися» does nothing)
@@ -57,12 +58,27 @@ enum GamesWeb {
     }
 }
 
+/// A fresh holder each time the page shows; the one web view moves into it (a view can have only one parent,
+/// and SwiftUI may tear the old holder down a moment later — so we never hand out the web view itself).
 struct GamesWebView: UIViewRepresentable {
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> UIView {
+        let box = UIView()
+        box.backgroundColor = GamesWeb.shared.backgroundColor
+        attach(to: box)
         GamesWeb.loadIfNeeded()
-        return GamesWeb.shared
+        return box
     }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ box: UIView, context: Context) {
+        if GamesWeb.shared.superview !== box { attach(to: box) }
+    }
+    private func attach(to box: UIView) {
+        let w = GamesWeb.shared
+        w.removeFromSuperview()
+        w.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(w)
+        NSLayoutConstraint.activate([w.topAnchor.constraint(equalTo: box.topAnchor), w.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+                                     w.leadingAnchor.constraint(equalTo: box.leadingAnchor), w.trailingAnchor.constraint(equalTo: box.trailingAnchor)])
+    }
 }
 
 struct GamesPage: View {

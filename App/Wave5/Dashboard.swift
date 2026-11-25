@@ -89,9 +89,10 @@ struct DashboardPage: View {
     @State private var cardsOpen = false
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                header
+                header.id("dashTop")
                 if let d {
                     if d.soon, let n = d.next { soonCard(n) }
                     pager(d)
@@ -101,6 +102,9 @@ struct DashboardPage: View {
                 if let error { Text(error).font(.system(size: 13)).foregroundStyle(Theme.coffee) }
             }
             .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 130)
+        }
+        // the other page of Головна always starts from its top
+        .onChange(of: homePage) { _, _ in withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("dashTop", anchor: .top) } }
         }
         .background(Theme.cream.ignoresSafeArea())
         .foregroundStyle(Theme.ink)
