@@ -85,6 +85,7 @@ final class ShellModel: NSObject, ObservableObject {
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()                 // the offline queue of the pages lives in localStorage / IndexedDB
         cfg.allowsInlineMediaPlayback = true
+        cfg.applicationNameForUserAgent = "DaVincitApp/\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1")"
         cfg.mediaTypesRequiringUserActionForPlayback = []  // the wooden click of the slider needs no first tap
         let ucc = WKUserContentController()
         ucc.add(WeakHandler(self), name: "dv")
