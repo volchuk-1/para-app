@@ -34,6 +34,7 @@ targets:
         NSSupportsLiveActivities: true
         NSCameraUsageDescription: "Камера потрібна, щоб відсканувати штрихкод книжки і зняти фото для гри."
         NSPhotoLibraryUsageDescription: "Фото з галереї — для спогадів, аватарки і гри «Три в ряд»."
+        NSLocationWhenInUseUsageDescription: "Місце потрібне, щоб запам'ятати, де зроблено фото бажання чи спогаду, і підказати «ти поруч»."
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
     entitlements:
       path: App/Para.entitlements

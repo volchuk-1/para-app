@@ -7,7 +7,8 @@ struct RootView: View {
     var body: some View {
         Group {
             if state.me != nil && state.isPaired {
-                MainView()
+                // the hybrid shell shows the pages of the Telegram version; the old screens stay behind a switch for diagnostics
+                if UserDefaults.standard.bool(forKey: "dv-old-ui") { MainView() } else { ShellScreen() }
             } else {
                 OnboardingView()
             }
