@@ -82,6 +82,7 @@ struct DashboardPage: View {
     @State private var watchIndex = 0
     @State private var homeEdit: HomeEditStart?
     @State private var homePage: Int? = 0
+    @State private var pageHeights: [Int: CGFloat] = [:]
     @State private var moodOpen = false
     @State private var moodHot: String?
     @State private var moodFrames: [String: CGRect] = [:]
@@ -211,12 +212,16 @@ struct DashboardPage: View {
                         editHomeButton
                     }
                     .padding(.horizontal, 16)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(GeometryReader { g in Color.clear.preference(key: PageHeights.self, value: [0: g.size.height]) })
                     .containerRelativeFrame(.horizontal)
                     .id(0)
                     DashListPage(d: d, spot: spot, onTasks: { page = .tasks }, onFilm: { openFilm($0) },
                                  onQuick: { k, label in quick = QuickAsk(kind: k, label: label, time: "19:30") },
                                  onNote: { sheet = .note }, onEdit: { openEdit(nil) })
                         .padding(.horizontal, 16)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background(GeometryReader { g in Color.clear.preference(key: PageHeights.self, value: [1: g.size.height]) })
                         .containerRelativeFrame(.horizontal)
                         .id(1)
                 }
@@ -224,6 +229,10 @@ struct DashboardPage: View {
             }
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: $homePage)
+            // as tall as the page you look at: no empty space to scroll under the shorter one
+            .frame(height: pageHeights[homePage ?? 0], alignment: .top)
+            .onPreferenceChange(PageHeights.self) { pageHeights = $0 }
+            .animation(.easeOut(duration: 0.3), value: homePage)
             .padding(.horizontal, -16)
             .sensoryFeedback(.selection, trigger: homePage)
             HStack(spacing: 6) {
@@ -716,4 +725,9 @@ struct SpotifyGlyph: View {
             }
         }
     }
+}
+
+struct PageHeights: PreferenceKey {
+    static var defaultValue: [Int: CGFloat] = [:]
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) { value.merge(nextValue()) { $1 } }
 }

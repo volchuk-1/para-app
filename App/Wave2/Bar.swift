@@ -41,6 +41,8 @@ struct WaveBar: View {
     @State private var foldTicket = 0
     @State private var extrasFor: String?
     @State private var extraHot: Page?
+    /// held and let go without sliding: the pages stay open to be tapped
+    @State private var extrasPinned = false
     @State private var extraFrames: [Page: CGRect] = [:]
     @State private var holdTask: Task<Void, Never>?
     @State private var holdStart: Date?
@@ -82,7 +84,7 @@ struct WaveBar: View {
                         .transition(.modifier(active: PopIn(shown: false), identity: PopIn(shown: true)))
                 }
             }
-            .allowsHitTesting(false)
+            .allowsHitTesting(extrasPinned)
         }
         .animation(spring, value: open)
         .animation(spring, value: active)
@@ -154,6 +156,13 @@ struct WaveBar: View {
                             holdStart = nil
                             let still = abs(v.translation.width) < 12 && abs(v.translation.height) < 12
                             if extrasFor != nil {
+                                if extraHot == nil && !quick && !extrasPinned {
+                                    extrasPinned = true
+                                    let k = s.id
+                                    Task { try? await Task.sleep(for: .seconds(5)); if extrasPinned && extrasFor == k { withAnimation(.easeOut(duration: 0.18)) { extrasFor = nil }; extrasPinned = false } }
+                                    return
+                                }
+                                extrasPinned = false
                                 if let p = extraHot { Haptic.hit(.medium); page = p; withAnimation(spring) { active = s.id } }
                                 withAnimation(.easeOut(duration: 0.18)) { extrasFor = nil }
                                 // a plain quick tap: the circle does what it always did
@@ -186,6 +195,13 @@ struct WaveBar: View {
                 .scaleEffect(hot ? 1.14 : 1)
                 .animation(.spring(response: 0.25, dampingFraction: 0.55), value: hot)
                 .background(GeometryReader { g in Color.clear.onAppear { extraFrames[e.0] = g.frame(in: .global) }.onChange(of: g.frame(in: .global)) { _, f in extraFrames[e.0] = f } })
+                .contentShape(Circle())
+                .onTapGesture {
+                    guard extrasPinned, let k = extrasFor else { return }
+                    Haptic.hit(.medium); page = e.0; extrasPinned = false
+                    withAnimation(spring) { active = k }
+                    withAnimation(.easeOut(duration: 0.18)) { extrasFor = nil }
+                }
             }
         }
         .padding(8)

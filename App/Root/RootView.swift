@@ -109,6 +109,8 @@ struct MainView: View {
                 }
             }
             .frame(width: UIScreen.main.bounds.width).frame(maxHeight: .infinity)
+            // a page scrolls only when there is more below; a short one does not spring
+            .scrollBounceBehavior(.basedOnSize, axes: .vertical)
             .transition(.blurReplace)
             .animation(.easeInOut(duration: 0.25), value: page)
 
