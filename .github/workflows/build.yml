@@ -1,8 +1,13 @@
 name: build-ipa
+# macOS minutes count ten times: no build on every push — only when asked (gh workflow run build-ipa),
+# and the simulator tests only when asked too (-f tests=true)
 on:
-  push:
-    branches: [main]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: run the unit tests on a simulator first
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -14,11 +19,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Generate Xcode project
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
           brew install xcodegen
           xcodegen generate
 
       - name: Unit tests (simulator)
+        if: ${{ inputs.tests }}
         run: |
           set -o pipefail
           SIM=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone 1[5-7][^(]*' | sed 's/ *$//')
