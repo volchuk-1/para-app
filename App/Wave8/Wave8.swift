@@ -509,6 +509,7 @@ struct DashListPage: View {
     var onNote: () -> Void
     var onEdit: () -> Void
     @EnvironmentObject var store: Store
+    @EnvironmentObject var state: AppState
     @State private var tasks: TaskDay?
     @State private var open = false
     @State private var ticked: Set<String> = []
@@ -520,7 +521,6 @@ struct DashListPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            BoilerCard()
             todayTile
             tasksBlock
             if let w = d.watching?.first ?? d.film { watchRow(w) }
@@ -528,7 +528,12 @@ struct DashListPage: View {
             if let n = d.note {
                 block {
                     HStack(spacing: 12) {
-                        Text(String((d.partner?.name ?? "?").prefix(1))).font(.system(size: 15, weight: .bold)).foregroundStyle(.white).frame(width: 34, height: 34).background(Color(hex: 0x6E8FB5), in: Circle())
+                        ZStack {
+                            Circle().fill(Color(hex: 0x6E8FB5))
+                            Text(String((d.partner?.name ?? "?").prefix(1))).font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                            if let u = state.partner?.avatarUrl { AuthImage(url: u).clipShape(Circle()) }
+                        }
+                        .frame(width: 34, height: 34)
                         VStack(alignment: .leading, spacing: 1) { Text(n.text.isEmpty ? "📷" : n.text).font(.system(size: 15, weight: .medium)); Text("записка").font(.system(size: 12)).foregroundStyle(Theme.muted) }
                         Spacer()
                     }

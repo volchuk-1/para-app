@@ -35,6 +35,8 @@ final class WheelNav: ObservableObject {
     @Published var open = false
     @Published var rot = 0.0
     @Published var hot = 1
+    /// where the wheel stands: nil — the middle of the screen; a value — the height of the finger
+    @Published var cy: CGFloat?
     private var rot0 = 0.0
     private var y0: CGFloat = 0
     /// RootView answers: open this item (nil page = Налаштування)
@@ -45,6 +47,8 @@ final class WheelNav: ObservableObject {
     static var mode: String { UserDefaults.standard.string(forKey: "dv-nav") ?? "bar" }
 
     func begin(_ y: CGFloat) {
+        let h = UIScreen.main.bounds.height
+        cy = (UserDefaults.standard.string(forKey: "dv-wheel-at") ?? "center") == "finger" ? max(h * 0.28, min(h * 0.72, y)) : nil
         let i = WheelItems.all.firstIndex { $0.page == current && $0.size != 2 } ?? 1
         rot = Double(i) * Self.step; rot0 = rot; y0 = y; hot = i
         Haptic.hit(.medium)
@@ -53,7 +57,7 @@ final class WheelNav: ObservableObject {
     func drag(_ y: CGFloat) {
         guard open else { return }
         let maxRot = Double(WheelItems.all.count - 1) * Self.step
-        rot = max(-20, min(maxRot + 20, rot0 - Double(y - y0) * 0.34))
+        rot = max(-20, min(maxRot + 20, rot0 - Double(y - y0) * 0.62))
         let h = max(0, min(WheelItems.all.count - 1, Int((rot / Self.step).rounded())))
         if h != hot { hot = h; tick.selectionChanged() }
     }
@@ -96,7 +100,7 @@ struct WheelOverlay: View {
     var body: some View {
         GeometryReader { g in
             let W = g.size.width, H = g.size.height
-            let R = max(300, H * 0.42), CX = W + R * 0.48, CY = H / 2, RT = R - 62
+            let R = max(300, H * 0.42), CX = W + R * 0.48, CY = nav.cy.map { $0 - g.frame(in: .global).minY } ?? H / 2, RT = R - 62
             ZStack(alignment: .topLeading) {
                 LinearGradient(colors: [Theme.cream.opacity(0.86), Theme.paper.opacity(0.96), Theme.paper.opacity(0.98)], startPoint: .leading, endPoint: .trailing)
                     .ignoresSafeArea()
@@ -123,6 +127,7 @@ struct WheelOverlay: View {
                 }
                 Capsule().fill(Color(hex: 0x2E2E30)).frame(width: 50, height: 18).position(x: CX - RT + 27, y: CY)
             }
+            .drawingGroup()
         }
         .allowsHitTesting(false)
         .transition(.opacity.combined(with: .offset(x: 60)))
@@ -142,6 +147,7 @@ struct WheelOverlay: View {
                 .overlay(Capsule().stroke(Theme.ink.opacity(on ? 0.12 : 0), lineWidth: 1))
             Image(systemName: it.icon).font(.system(size: it.size == 2 ? 24 : it.size == 0 ? 16 : 20, weight: .regular)).foregroundStyle(c)
                 .frame(width: w, height: h)
+                .scaleEffect(on ? 1.08 : 1)
                 .background(on || it.size == 2 ? c.opacity(0.14) : Theme.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: on ? 22 : 18, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: on ? 22 : 18, style: .continuous).stroke(c, lineWidth: on ? 2 : 0))
                 .shadow(color: c.opacity(on ? 0.3 : 0), radius: 12, y: 8)
@@ -180,71 +186,4 @@ extension API {
     struct BoilerAction: Encodable { let action: String }
     func boiler() async throws -> BoilerState { try await get("/boiler") }
     func boiler(_ action: String) async throws -> BoilerState { try await send("POST", "/boiler", BoilerAction(action: action)) }
-}
-
-struct BoilerCard: View {
-    @State private var s: BoilerState?
-    @State private var busy = false
-
-    var body: some View {
-        Group {
-            if let s, s.configured {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 14) {
-                        Image(systemName: "flame.fill").font(.system(size: 24))
-                            .foregroundStyle(s.on == true ? Color(hex: 0xB5651D) : (s.online == false || s.error != nil ? Color(hex: 0xB3261E) : Theme.muted))
-                            .frame(width: 48, height: 48)
-                            .background(s.on == true ? Color(hex: 0xF6D7A8) : Color(hex: 0xEFE7DA), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .shadow(color: Color(hex: 0xF0963C).opacity(s.on == true ? 0.45 : 0), radius: 12)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Котел").font(.system(size: 16, weight: .semibold))
-                            Text(line(s)).font(.system(size: 12.5)).foregroundStyle(Theme.muted).lineLimit(1)
-                        }
-                        Spacer()
-                        if s.online != false && s.error == nil {
-                            Toggle("", isOn: Binding(get: { s.on == true }, set: { _ in act("toggle") })).labelsHidden().tint(Color(hex: 0xC8742A)).disabled(busy)
-                        }
-                    }
-                    if s.online != false && s.error == nil {
-                        HStack(spacing: 6) {
-                            chip("1 год", "timer:1"); chip("2 год", "timer:2"); chip("3 год", "timer:3")
-                            if (s.countdown ?? 0) > 0 { chip("Стоп таймер", "cancel") } else { chip("6 год", "timer:6") }
-                        }
-                    }
-                }
-                .padding(16)
-                .background(Theme.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            }
-        }
-        .task { s = try? await API.current().boiler() }
-    }
-
-    private func line(_ s: BoilerState) -> String {
-        if s.error != nil { return "немає звʼязку з розеткою" }
-        if s.online == false { return "офлайн — вдома нема світла чи інтернету" }
-        let cd = s.countdown ?? 0
-        let left = cd > 0 ? " · ще " + (cd >= 3600 ? "\(cd / 3600) год" + (cd % 3600 >= 60 ? " \(cd % 3600 / 60) хв" : "") : "\(max(1, cd / 60)) хв") : ""
-        if s.on == true {
-            let w = s.watts.map { $0 >= 1000 ? String(format: " · %.1f кВт", $0 / 1000).replacingOccurrences(of: ".", with: ",") : " · \(Int($0)) Вт" } ?? ""
-            return "увімкнено" + w + left
-        }
-        return "вимкнено" + (s.volts.map { " · мережа \(Int($0)) В" } ?? "")
-    }
-
-    private func chip(_ t: String, _ a: String) -> some View {
-        Button { act(a) } label: {
-            Text(t).font(.system(size: 12.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity).frame(height: 34)
-                .background(Theme.cream, in: Capsule()).foregroundStyle(Theme.ink)
-        }
-        .buttonStyle(PressScale()).disabled(busy)
-    }
-
-    private func act(_ a: String) {
-        busy = true
-        Haptic.hit(.heavy)
-        Task {
-            if let r = try? await API.current().boiler(a) { s = r } else { s = try? await API.current().boiler() }
-            busy = false
-        }
-    }
 }

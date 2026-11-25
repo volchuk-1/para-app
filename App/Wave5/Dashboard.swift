@@ -88,6 +88,8 @@ struct DashboardPage: View {
     @State private var moodFrames: [String: CGRect] = [:]
     @State private var coinOpen = false
     @State private var cardsOpen = false
+    @State private var boilerOpen = false
+    @State private var boilerTap: Task<Void, Never>?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -151,6 +153,7 @@ struct DashboardPage: View {
         }
         .fullScreenCover(isPresented: $coinOpen, onDismiss: { Task { await load() } }) { Coin3DView(me: state.me?.name ?? "", partner: d?.partner?.name ?? "") }
         .fullScreenCover(isPresented: $cardsOpen) { CardsCarousel(first: d?.card) }
+        .fullScreenCover(isPresented: $boilerOpen) { BoilerPage() }
         // the mood bubble grows out of the mood button
         .overlay(alignment: .topTrailing) {
             if moodOpen {
@@ -526,6 +529,16 @@ struct DashboardPage: View {
         case "memory": page = .archive
         case "card": cardsOpen = true
         case "jar": page = .finance
+        // «Котел»: one tap switches it, two taps open its screen
+        case "boiler":
+            if let t = boilerTap { t.cancel(); boilerTap = nil; boilerOpen = true; return }
+            boilerTap = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(280))
+                guard !Task.isCancelled else { return }
+                boilerTap = nil
+                let b = BoilerStore.shared
+                if b.s?.configured == true, b.s?.online != false { await b.act("toggle") }
+            }
         default: break
         }
     }

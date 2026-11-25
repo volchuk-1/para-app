@@ -26,6 +26,7 @@ enum WidgetKind {
         ("turn", "Чия черга обирати фільм", "arrow.left.arrow.right"), ("pomodoro", "Помодоро", "timer"),
         ("note", "Записка", "note.text"), ("coin", "Монетка", "circle.circle"),
         ("jar", "Банка", "banknote"), ("memory", "Спогад", "photo"), ("spotify", "Spotify", "music.note"),
+        ("boiler", "Котел", "flame"),
     ]
     /// standard background and text colour of a face
     static func palette(_ f: String) -> (Color, Color) {
@@ -43,6 +44,7 @@ enum WidgetKind {
         case "spotify": return (Color(hex: 0x1F1F1F), .white)
         case "card": return (Color(hex: 0x2F3A24), Theme.cream)
         case "tasks": return (Theme.paper, Theme.ink)
+        case "boiler": return (Color(hex: 0x1C1C1E), Color(hex: 0xF2F2F2))
         default: return (Color(hex: 0x555555), .white)
         }
     }
@@ -304,6 +306,7 @@ struct WidgetCube: View {
         case "mood": return "Настрій"
         case "turn": return "Обирає фільм"
         case "coin": return "Монетка"
+        case "boiler": return "Котел"
         case "card": return (d.card?.tag ?? "Натхнення") + (d.card?.youtube != nil ? " · ▶ відео" : "")
         case "memory": return d.photo?.yearAgo == true ? "Рік тому" : "Спогад"
         case "tasks": return d.tasks.map { $0.total > 0 ? "Справи · \($0.done) з \($0.total)" : "Справи" } ?? "Справи"
@@ -352,6 +355,7 @@ struct WidgetCube: View {
                 head("На сьогодні вільно", 15)
                 sub("тап — додати справу")
             }
+        case "boiler": BoilerFace(big: big, wide: wide)
         default:
             EmptyView()
         }

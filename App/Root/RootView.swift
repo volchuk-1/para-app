@@ -187,7 +187,7 @@ struct MainView: View {
         // the old «Помодоро» is the timer of «Справи»; leaving the timer there lands on «Справи»
         .onChange(of: page) { _, p in if p == .pomo { focusMode = .timer } }
         .onChange(of: focusMode) { _, m in if page == .pomo, m != .timer { page = .tasks } }
-        .onChange(of: phase) { _, p in if p == .active { LiveTasks.sync(); Task { await store.refreshAll(); await countFree() } } }
+        .onChange(of: phase) { _, p in if p == .active { LiveTasks.sync(); Task { await state.refresh(); await store.refreshAll(); await countFree() } } }
         .onChange(of: state.pendingShare) { _, u in
             if let u { route = .share(u); state.pendingShare = nil }
         }
