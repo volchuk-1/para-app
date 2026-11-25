@@ -238,6 +238,11 @@ extension ShellModel: WKUIDelegate {
         top.present(a, animated: true)
     }
 
+    /// The microphone for voice notes: our own pages may use it once iOS itself has allowed the app.
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        decisionHandler(origin.host == KeyStore.serverURL.host ? .grant : .deny)
+    }
+
     /// `window.open` and links with target=_blank: outside, in Safari.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url { UIApplication.shared.open(url) }
