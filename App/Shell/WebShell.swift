@@ -129,29 +129,49 @@ final class ShellModel: NSObject, ObservableObject {
         return "try{localStorage.setItem('dv-key-tg',\(json)[0])}catch(e){}"
     }
 
-    /// «Назад» from the left edge: the page follows the finger, then goes away (or springs back).
+    /// «Назад» from the left edge. A picture of the page (not the live web view) follows the finger, so the drag stays smooth;
+    /// on release the pages go back at once, underneath, while the picture slides away — no blank pause after it.
+    private var edgeSnap: UIView?
+    private var edgeDim: UIView?
     @objc private func edgeSwipe(_ g: UIScreenEdgePanGestureRecognizer) {
-        guard let v = g.view else { return }
-        guard canBack else { v.transform = .identity; return }
-        let x = max(0, g.translation(in: v.superview).x)
+        guard let v = g.view, let win = v.window else { return }
+        let w = v.bounds.width
+        let x = max(0, g.translation(in: win).x)
+        func clear() { edgeSnap?.removeFromSuperview(); edgeDim?.removeFromSuperview(); edgeSnap = nil; edgeDim = nil }
         switch g.state {
+        case .began:
+            clear()
+            guard canBack, let snap = v.snapshotView(afterScreenUpdates: false) else { return }
+            let frame = v.convert(v.bounds, to: win)
+            let dim = UIView(frame: frame)
+            dim.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+            dim.isUserInteractionEnabled = false
+            snap.frame = frame
+            snap.layer.shadowColor = UIColor.black.cgColor
+            snap.layer.shadowOpacity = 0.22
+            snap.layer.shadowRadius = 14
+            snap.layer.shadowOffset = CGSize(width: -4, height: 0)
+            snap.isUserInteractionEnabled = false
+            win.addSubview(dim); win.addSubview(snap)
+            edgeSnap = snap; edgeDim = dim
         case .changed:
-            v.transform = CGAffineTransform(translationX: x, y: 0)
+            guard let snap = edgeSnap else { return }
+            snap.transform = CGAffineTransform(translationX: x, y: 0)
+            edgeDim?.alpha = max(0, 1 - x / w)
         case .ended, .cancelled, .failed:
-            let go = g.state == .ended && (x > 90 || g.velocity(in: v.superview).x > 600)
+            guard let snap = edgeSnap else { clear(); return }
+            let go = g.state == .ended && (x > 90 || g.velocity(in: win).x > 600)
             if go {
-                UIView.animate(withDuration: 0.18, delay: 0, options: .curveEaseOut, animations: {
-                    v.transform = CGAffineTransform(translationX: v.bounds.width, y: 0)
-                }, completion: { _ in
-                    self.js("window.DVNative&&window.DVNative.back()")
-                    v.alpha = 0
-                    v.transform = .identity
-                    UIView.animate(withDuration: 0.22, delay: 0.06, options: .curveEaseOut, animations: { v.alpha = 1 }, completion: nil)
-                })
+                self.js("window.DVNative&&window.DVNative.back()")    // the page under the picture changes now
+                UIView.animate(withDuration: 0.24, delay: 0, options: .curveEaseOut, animations: {
+                    snap.transform = CGAffineTransform(translationX: w, y: 0)
+                    self.edgeDim?.alpha = 0
+                }, completion: { _ in clear() })
             } else {
-                UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [], animations: {
-                    v.transform = .identity
-                }, completion: nil)
+                UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [], animations: {
+                    snap.transform = .identity
+                    self.edgeDim?.alpha = 1
+                }, completion: { _ in clear() })
             }
         default:
             break
