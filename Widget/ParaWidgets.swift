@@ -104,6 +104,19 @@ struct DateLiveActivity: Widget {
     private let olive = Color(red: 0x4B / 255, green: 0x5E / 255, blue: 0x3A / 255)
     private let cream = Color(red: 0xF2 / 255, green: 0xEE / 255, blue: 0xE2 / 255)
 
+    /// The colour of this kind of date (the same as in the pages): Кіно — burgundy, a dinner — terracotta …
+    static func tint(_ title: String) -> Color {
+        let t = title.lowercased()
+        func hex(_ v: Int) -> Color { Color(red: Double((v >> 16) & 255) / 255, green: Double((v >> 8) & 255) / 255, blue: Double(v & 255) / 255) }
+        if t.hasPrefix("кіно") || t.contains("сеанс") { return hex(0x790C12) }
+        if ["вечер", "ресторан", "кафе", "кава", "сніданок", "обід"].contains(where: t.contains) { return hex(0x8C4A2F) }
+        if ["прогулян", "парк", "гори", "похід"].contains(where: t.contains) { return hex(0x3F5A34) }
+        if ["поїздк", "подорож", "відпустк"].contains(where: t.contains) { return hex(0x2F5F86) }
+        if ["концерт", "театр", "виставк", "музей"].contains(where: t.contains) { return hex(0x4A3B6B) }
+        if t.contains("вдома") { return hex(0x7A4F6A) }
+        return hex(0x6E3039)
+    }
+
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: DateAttributes.self) { context in
             HStack(spacing: 12) {
@@ -122,7 +135,9 @@ struct DateLiveActivity: Widget {
                     .multilineTextAlignment(.trailing).frame(maxWidth: 110)
             }
             .padding()
-            .activityBackgroundTint(olive)
+            // matte: one even colour of the kind of date, no light at the edges
+            .background(Self.tint(context.attributes.title))
+            .activityBackgroundTint(Self.tint(context.attributes.title))
             .activitySystemActionForegroundColor(cream)
         } dynamicIsland: { context in
             DynamicIsland {
