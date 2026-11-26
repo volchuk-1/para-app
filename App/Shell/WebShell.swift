@@ -231,6 +231,11 @@ final class ShellModel: NSObject, ObservableObject {
             }
         case "calendarSync":
             CalendarSync.setOn(m["on"] as? Bool ?? false) { [weak self] ok in self?.call("DV.calendarSynced", [ok]) }
+        case "speechCheck":
+            Task { @MainActor [weak self] in
+                let r = await SpeechCheck.run()
+                self?.call("DV.speechChecked", [r])
+            }
         case "calendarState":
             call("DV.calendarSynced", [CalendarSync.isOn])
         case "mapSnap":
@@ -301,6 +306,7 @@ extension ShellModel: WKNavigationDelegate {
         if !fromCopy {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in if let w = self?.web, self?.fromCopy == false { OfflineCopy.save(from: w) } }
             CalendarSync.run()
+            AppExpiry.report()
         }
         // if native.js did not answer «ready» (an old copy of the pages), show the page anyway
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
