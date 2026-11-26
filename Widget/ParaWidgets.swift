@@ -153,12 +153,16 @@ struct DateLiveActivity: Widget {
                     else if !context.attributes.place.isEmpty { Text(context.attributes.place).font(.caption) }
                 }
             } compactLeading: {
-                Image(systemName: "heart.fill").foregroundStyle(.pink)
+                Image(systemName: "heart.fill").foregroundStyle(Self.tint(context.attributes.title).opacity(1)).brightness(0.25)
             } compactTrailing: {
-                Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true).opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час іти ❤").fixedSize() } }
-                    .monospacedDigit().frame(width: 52)
+                // the whole «2:17:39» fits: a smaller, fixed-width font and a wider place
+                Text(timerInterval: Date.countdown(to: context.state.startsAt), countsDown: true)
+                    .opacity(context.isStale ? 0 : 1).overlay { if context.isStale { Text("Час ❤").fixedSize() } }
+                    .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                    .multilineTextAlignment(.trailing).lineLimit(1).minimumScaleFactor(0.7)
+                    .frame(width: 68, alignment: .trailing)
             } minimal: {
-                Image(systemName: "heart.fill").foregroundStyle(.pink)
+                Image(systemName: "heart.fill").foregroundStyle(Self.tint(context.attributes.title)).brightness(0.25)
             }
         }
     }
