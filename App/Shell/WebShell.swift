@@ -42,6 +42,7 @@ struct ShellScreen: View {
             if let link { shell.open(link: link); state.pendingLink = nil }
         }
         .task { if let link = state.pendingLink { shell.open(link: link); state.pendingLink = nil } }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in shell.cameBack() }
     }
 }
 
@@ -60,6 +61,8 @@ final class ShellModel: NSObject, ObservableObject {
     private var canBack = false
     /// A link from a widget that came before the pages were ready.
     private var waitingLink: String?
+    /// The pages came from the copy kept for no network: try the real ones again when the app is back in front.
+    private var fromCopy = false
 
     func start() {
         guard !started else { return }
@@ -226,6 +229,23 @@ final class ShellModel: NSObject, ObservableObject {
             if let s = m["data"] as? String, let d = Data(base64Encoded: s) {
                 PhotoSaver.save(d) { [weak self] ok in self?.call("DV.photoSaved", [ok]) }
             }
+        case "calendarSync":
+            CalendarSync.setOn(m["on"] as? Bool ?? false) { [weak self] ok in self?.call("DV.calendarSynced", [ok]) }
+        case "calendarState":
+            call("DV.calendarSynced", [CalendarSync.isOn])
+        case "mapSnap":
+            let id = m["id"] as? String ?? ""
+            let place = m["place"] as? String ?? ""
+            let pts = (m["points"] as? [[String: Any]] ?? []).compactMap { p -> (lat: Double, lon: Double, color: UIColor)? in
+                guard let la = p["lat"] as? Double, let lo = p["lon"] as? Double else { return nil }
+                return (la, lo, (p["who"] as? String) == "partner" ? UIColor(red: 0.77, green: 0.54, blue: 0.6, alpha: 1) : UIColor(red: 0.2, green: 0.47, blue: 0.96, alpha: 1))
+            }
+            location.request { [weak self] here in
+                Task { @MainActor in
+                    let pic = await MapPicture.make(place: place, points: pts, near: here)
+                    self?.call("DV.mapSnap", [id, pic ?? ""])
+                }
+            }
         case "calendarAdd":
             if let title = m["title"] as? String, let a = m["startsAt"] as? Double {
                 let start = Date(timeIntervalSince1970: a / 1000)
@@ -278,6 +298,10 @@ extension ShellModel: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if !fromCopy {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in if let w = self?.web, self?.fromCopy == false { OfflineCopy.save(from: w) } }
+            CalendarSync.run()
+        }
         // if native.js did not answer «ready» (an old copy of the pages), show the page anyway
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self else { return }
@@ -287,8 +311,21 @@ extension ShellModel: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if !fromCopy, OfflineCopy.open(in: webView) {
+            fromCopy = true
+            failed = nil
+            return
+        }
         ready = false
         failed = error.localizedDescription
+    }
+
+    /// Back in front after it opened without the network: the real pages again (and the calendar).
+    func cameBack() {
+        CalendarSync.run()
+        guard fromCopy else { return }
+        fromCopy = false
+        load()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
