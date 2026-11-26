@@ -3,6 +3,7 @@ import WebKit
 import CoreLocation
 import CoreMotion
 import WidgetKit
+import ActivityKit
 
 /// The hybrid shell: the same pages as the Telegram version, shown in the app's own web view.
 /// `server/web/native.js` stands in for Telegram there and talks to this file over the «dv» message handler;
@@ -291,6 +292,14 @@ final class ShellModel: NSObject, ObservableObject {
                 DateTracker.shared.start(id: id, partner: m["name"] as? String ?? "", eta: m["eta"] as? Int)
             } else {
                 DateTracker.shared.stop()
+            }
+        case "dateKeep":
+            // the dates still alive on the pages: every other countdown (a cancelled or deleted date) ends now
+            if let ids = m["ids"] as? [String] {
+                let alive = Set(ids)
+                for a in Activity<DateAttributes>.activities where !alive.contains(a.attributes.eventId) {
+                    Task { await a.end(nil, dismissalPolicy: .immediate) }
+                }
             }
         case "dateActivity":
             if let id = m["id"] as? String {
