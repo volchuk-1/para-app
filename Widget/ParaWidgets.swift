@@ -61,6 +61,21 @@ struct NoteWidget: Widget {
 
 // MARK: - Live Activity / Dynamic Island
 
+/// Matte cards on the lock screen: our own even colour fills the card, and the system tint under it is a darker shade of
+/// the same colour — iOS draws a light rim from that tint, so a dark tint keeps the edge from glowing.
+enum Matte {
+    static func color(_ v: Int, _ k: Double = 1) -> Color {
+        Color(red: Double((v >> 16) & 255) / 255 * k, green: Double((v >> 8) & 255) / 255 * k, blue: Double(v & 255) / 255 * k)
+    }
+}
+extension View {
+    func matteCard(_ hex: Int) -> some View {
+        self.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Matte.color(hex))
+            .activityBackgroundTint(Matte.color(hex, 0.55))
+    }
+}
+
 struct PingLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PingAttributes.self) { context in
@@ -73,7 +88,7 @@ struct PingLiveActivity: Widget {
                     .font(.title3.bold())
             }
             .padding()
-            .activityBackgroundTint(Color(red: 0x4B / 255, green: 0x5E / 255, blue: 0x3A / 255))
+            .matteCard(0x4B5E3A)
             .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
@@ -105,9 +120,10 @@ struct DateLiveActivity: Widget {
     private let cream = Color(red: 0xF2 / 255, green: 0xEE / 255, blue: 0xE2 / 255)
 
     /// The colour of this kind of date (the same as in the pages): Кіно — burgundy, a dinner — terracotta …
-    static func tint(_ title: String) -> Color {
+    static func tint(_ title: String) -> Color { Matte.color(hexOf(title)) }
+    static func hexOf(_ title: String) -> Int {
         let t = title.lowercased()
-        func hex(_ v: Int) -> Color { Color(red: Double((v >> 16) & 255) / 255, green: Double((v >> 8) & 255) / 255, blue: Double(v & 255) / 255) }
+        func hex(_ v: Int) -> Int { v }
         if t.hasPrefix("кіно") || t.contains("сеанс") { return hex(0x790C12) }
         if ["вечер", "ресторан", "кафе", "кава", "сніданок", "обід"].contains(where: t.contains) { return hex(0x8C4A2F) }
         if ["прогулян", "парк", "гори", "похід"].contains(where: t.contains) { return hex(0x3F5A34) }
@@ -136,8 +152,7 @@ struct DateLiveActivity: Widget {
             }
             .padding()
             // matte: one even colour of the kind of date, no light at the edges
-            .background(Self.tint(context.attributes.title))
-            .activityBackgroundTint(Self.tint(context.attributes.title))
+            .matteCard(Self.hexOf(context.attributes.title))
             .activitySystemActionForegroundColor(cream)
         } dynamicIsland: { context in
             DynamicIsland {
@@ -195,7 +210,7 @@ struct TaskLiveActivity: Widget {
                     .multilineTextAlignment(.trailing).frame(maxWidth: 100)
             }
             .padding()
-            .activityBackgroundTint(olive)
+            .matteCard(0x4B5E3A)
             .activitySystemActionForegroundColor(cream)
         } dynamicIsland: { context in
             DynamicIsland {
