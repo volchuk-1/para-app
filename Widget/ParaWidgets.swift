@@ -212,5 +212,9 @@ struct ParaWidgets: WidgetBundle {
         PingLiveActivity()
         DateLiveActivity()
         TaskLiveActivity()
+        if #available(iOS 18.0, *) {
+            VoiceNoteControl()
+            MomentControl()
+        }
     }
 }

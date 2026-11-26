@@ -279,7 +279,11 @@ extension ShellModel: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // if native.js did not answer «ready» (an old copy of the pages), show the page anyway
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.ready = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self else { return }
+            self.ready = true
+            if let l = self.waitingLink { self.waitingLink = nil; self.open(link: l) }
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

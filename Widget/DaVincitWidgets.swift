@@ -168,7 +168,7 @@ struct PhotoProvider: TimelineProvider {
             var entry = PhotoEntry(date: .now, image: nil, text: "Тут буде фото", who: "", at: nil)
             if let d = await WidgetAPI.json("dashboard") {
                 entry.who = (d["partner"] as? [String: Any])?["name"] as? String ?? ""
-                if let n = d["note"] as? [String: Any] {
+                if let n = (d["moment"] as? [String: Any]) {
                     entry.text = n["text"] as? String ?? ""
                     entry.at = WidgetAPI.date(n["at"] as? String)
                     if let u = n["photoUrl"] as? String { entry.image = await WidgetAPI.image(u, side: 600) }
@@ -198,7 +198,7 @@ struct PhotoWidgetView: View {
             ZStack {
                 Color(hex: 0x91798F)
                 if let image = entry.image {
-                    Image(uiImage: image).resizable().scaledToFill()
+                    FullColorImage(image: image)
                     LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
                 }
             }
@@ -279,10 +279,8 @@ struct BoilerWidgetView: View {
     /// The lock screen: one round button that switches the boiler.
     private var lock: some View {
         Button(intent: BoilerToggleIntent()) {
-            ZStack {
-                AccessoryWidgetBackground()
-                Image(systemName: entry.on ? "flame.fill" : "power").font(.system(size: 20, weight: .semibold))
-            }
+            Image(systemName: entry.on ? "flame.fill" : "power").font(.system(size: 26, weight: .semibold))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .buttonStyle(.plain)
         .containerBackground(for: .widget) { Color.clear }
@@ -350,11 +348,9 @@ struct QuickView: View {
     var body: some View {
         Group {
             if family == .accessoryCircular {
-                ZStack {
-                    AccessoryWidgetBackground()
-                    Image(systemName: icon).font(.system(size: 20, weight: .semibold))
-                }
-                .containerBackground(for: .widget) { Color.clear }
+                Image(systemName: icon).font(.system(size: 26, weight: .semibold))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .containerBackground(for: .widget) { Color.clear }
             } else {
                 VStack(alignment: .leading) {
                     Image(systemName: icon).font(.system(size: 30, weight: .semibold))
@@ -389,5 +385,17 @@ struct SnapWidget: Widget {
         .configurationDisplayName("Зняти миттєвість")
         .description("Фото з підписом для другої половини.")
         .supportedFamilies([.systemSmall, .accessoryCircular])
+    }
+}
+
+/// A photo that keeps its own colours when the home screen tints the widgets (iOS 18+); before that — as it is.
+struct FullColorImage: View {
+    let image: UIImage
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            Image(uiImage: image).resizable().widgetAccentedRenderingMode(.fullColor).scaledToFill()
+        } else {
+            Image(uiImage: image).resizable().scaledToFill()
+        }
     }
 }
