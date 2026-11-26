@@ -205,6 +205,7 @@ struct TaskLiveActivity: Widget {
 struct ParaWidgets: WidgetBundle {
     var body: some Widget {
         TodayWidget()
+        CalendarWidget()
         PartnerPhotoWidget()
         BoilerWidget()
         VoiceNoteWidget()

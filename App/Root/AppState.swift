@@ -69,7 +69,7 @@ final class AppState: ObservableObject {
            let s = comps.queryItems?.first(where: { $0.name == "url" })?.value,
            let shared = URL(string: s) {
             pendingShare = shared
-        } else if let host = url.host, ["note", "snap", "moment", "date", "boiler"].contains(host) {
+        } else if let host = url.host, ["note", "snap", "moment", "date", "boiler", "cal"].contains(host) {
             pendingLink = host
         }
     }

@@ -164,6 +164,11 @@ final class ShellModel: NSObject, ObservableObject {
         call("DV.deepLink", [link])
     }
 
+    /// The real light/dark of the phone (the app itself switches its own look with the status bar, so the pages cannot see it).
+    func sendAppearance() {
+        call("DVTheme.system", [UIScreen.main.traitCollection.userInterfaceStyle == .dark])
+    }
+
     /// Calls a function of the pages with JSON arguments: `call("DV.dateEta", [id, result])`.
     private func call(_ fn: String, _ args: [Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: args), let json = String(data: data, encoding: .utf8) else { return }
@@ -191,6 +196,7 @@ final class ShellModel: NSObject, ObservableObject {
         switch t {
         case "ready":
             ready = true
+            sendAppearance()
             if let l = waitingLink { waitingLink = nil; open(link: l) }
         case "back":
             canBack = m["on"] as? Bool ?? false
@@ -231,6 +237,9 @@ final class ShellModel: NSObject, ObservableObject {
             }
         case "calendarSync":
             CalendarSync.setOn(m["on"] as? Bool ?? false) { [weak self] ok in self?.call("DV.calendarSynced", [ok]) }
+        case "theme":
+            let dark = m["dark"] as? Bool ?? false
+            web?.backgroundColor = dark ? UIColor(Color(hex: 0x0E100D)) : UIColor(Color(hex: 0xEEF0EE))
         case "speechCheck":
             Task { @MainActor [weak self] in
                 let r = await SpeechCheck.run()
@@ -328,6 +337,7 @@ extension ShellModel: WKNavigationDelegate {
 
     /// Back in front after it opened without the network: the real pages again (and the calendar).
     func cameBack() {
+        sendAppearance()
         CalendarSync.run()
         guard fromCopy else { return }
         fromCopy = false
