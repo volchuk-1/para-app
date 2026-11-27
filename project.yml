@@ -39,7 +39,7 @@ targets:
         NSPhotoLibraryAddUsageDescription: "Щоб зберегти фото від партнера у «Фото» на телефоні."
         NSLocationAlwaysAndWhenInUseUsageDescription: "Лише дорогою на побачення і лише з вашої згоди: показати партнерові, де ви, і порахувати час у дорозі."
         CADisableMinimumFrameDurationOnPhone: true
-        NSMicrophoneUsageDescription: "Мікрофон потрібен для голосових нотаток."
+        NSMicrophoneUsageDescription: "Мікрофон потрібен для голосових нотаток і для режиму Nyx «Під музику» (лише гучність у цю мить; нічого не записується)."
         NSCameraUsageDescription: "Камера потрібна, щоб відсканувати штрихкод книжки і зняти фото для гри."
         NSPhotoLibraryUsageDescription: "Фото з галереї — для спогадів, аватарки і гри «Три в ряд»."
         NSLocationWhenInUseUsageDescription: "Місце потрібне, щоб запам'ятати, де зроблено фото, порахувати дорогу на побачення і — лише з вашої згоди — показати партнерові, де ви дорогою туди."
