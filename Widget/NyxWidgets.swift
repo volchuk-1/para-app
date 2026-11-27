@@ -15,6 +15,11 @@ private func rhythmIcon(_ r: NyxRhythm) -> String {
     case .wave: return "water.waves"
     case .pulse: return "waveform.path.ecg"
     case .steps: return "chart.bar.fill"
+    case .build: return "arrow.up.right"
+    case .random: return "shuffle"
+    case .custom: return "hand.draw.fill"
+    case .music: return "music.note"
+    case .tilt: return "iphone.gen3.radiowaves.left.and.right"
     }
 }
 
@@ -25,6 +30,7 @@ private struct NyxButtons: View {
             Button(intent: NyxStepIntent(delta: -10)) { Image(systemName: "minus").frame(maxWidth: .infinity, minHeight: 38) }
             Button(intent: NyxStepIntent(delta: 10)) { Image(systemName: "plus").frame(maxWidth: .infinity, minHeight: 38) }
             Button(intent: NyxRhythmIntent()) { Image(systemName: rhythmIcon(state.rhythm.next)).frame(maxWidth: .infinity, minHeight: 38) }
+            Button(intent: NyxNextPresetIntent()) { Image(systemName: "heart.circle").frame(maxWidth: .infinity, minHeight: 38) }
             // one button for both: ▶ when quiet (the last strength), ■ when it plays
             Button(intent: NyxPlayPauseIntent()) { Image(systemName: state.level > 0 ? "stop.fill" : "play.fill").frame(maxWidth: .infinity, minHeight: 38) }
                 .tint(state.level > 0 ? stopRed : Color(red: 0x52 / 255, green: 0x7A / 255, blue: 0x5C / 255))
@@ -51,9 +57,23 @@ private struct NyxBar: View {
 }
 
 private func subtitle(_ s: NyxAttributes.ContentState) -> String {
-    var parts = [s.remote ? "на відстані" : s.paused ? "\(s.rhythm.title) — відкрий DaVincit" : s.rhythm.title]
-    if let b = s.battery { parts.append("батарея \(b)%") }
+    let what = s.preset ?? s.rhythm.title
+    var parts = [s.remote ? "на відстані" : s.paused ? "\(what) — відкрий DaVincit" : what]
+    if let b = s.battery { parts.append(b < 15 ? "батарея \(b)% — заряди" : "батарея \(b)%") }
     return parts.joined(separator: " · ")
+}
+
+/// The timer on the plate: how much is left (the toy stops then).
+private struct NyxTimerLine: View {
+    let end: Date
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "timer")
+            Text(timerInterval: Date.countdown(to: end), countsDown: true).monospacedDigit()
+        }
+        .font(.caption.bold())
+        .foregroundStyle(peach)
+    }
 }
 
 struct NyxLiveActivity: Widget {
@@ -65,8 +85,11 @@ struct NyxLiveActivity: Widget {
                     Image(systemName: "heart.fill").font(.system(size: 15, weight: .bold)).foregroundStyle(Color(hex6: wine))
                         .frame(width: 30, height: 30).background(Circle().fill(peach))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Nyx").font(.headline).foregroundStyle(.white)
-                        Text(subtitle(s)).font(.caption).foregroundStyle(.white.opacity(0.7))
+                        HStack(spacing: 8) {
+                            Text("Nyx").font(.headline).foregroundStyle(.white)
+                            if let end = s.endsAt { NyxTimerLine(end: end) }
+                        }
+                        Text(subtitle(s)).font(.caption).foregroundStyle((s.battery ?? 100) < 15 ? Color(red: 1, green: 0.62, blue: 0.6) : .white.opacity(0.7)).lineLimit(1)
                     }
                     Spacer()
                     Text("\(s.level)%").font(.system(size: 26, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(peach)

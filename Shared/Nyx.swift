@@ -6,41 +6,75 @@ import AppIntents
 /// the Live Activity, its buttons and the button of «Пункт керування». The buttons are LiveActivityIntents —
 /// iOS runs them in the app's own process, where `NyxHook.run` talks to the toy over Bluetooth.
 enum NyxRhythm: String, Codable, CaseIterable, Hashable {
-    case steady, wave, pulse, steps
+    case steady, wave, pulse, steps, build, random, custom, music, tilt
     var title: String {
         switch self {
         case .steady: return "Рівно"
         case .wave: return "Хвиля"
         case .pulse: return "Пульс"
         case .steps: return "Сходинки"
+        case .build: return "Наростання"
+        case .random: return "Випадковий"
+        case .custom: return "Свій"
+        case .music: return "Під музику"
+        case .tilt: return "Нахил"
         }
     }
+    /// «Ритм» on the plate goes round these (music and the tilt need the app open; «Свій» — when one is drawn).
+    static let round: [NyxRhythm] = [.steady, .wave, .pulse, .steps, .build, .random, .custom]
     var next: NyxRhythm {
-        let all = NyxRhythm.allCases
-        return all[(all.firstIndex(of: self)! + 1) % all.count]
+        let all = NyxRhythm.round
+        guard let i = all.firstIndex(of: self) else { return .steady }
+        return all[(i + 1) % all.count]
     }
-    /// The strength sent to the toy `t` seconds after the start, for the chosen level and the settings.
-    func output(level: Int, at t: Double, tune: NyxTune) -> Int {
+    /// The music and the tilt listen to the phone itself: only with the app open.
+    var live: Bool { self == .music || self == .tilt }
+
+    /// A number in 0…1 for the n-th moment of «Випадковий» (the same on the page: web/v37.js).
+    static func rnd(_ n: Int) -> Double {
+        let x = sin(Double(n) * 12.9898 + 78.233) * 43758.5453
+        return abs(x - x.rounded(.down))
+    }
+
+    /// The strength sent to the toy `t` seconds after the rhythm began, for the chosen level and the settings;
+    /// `env` (0…1) is what the microphone hears or how the phone is tilted.
+    func output(level: Int, at t: Double, tune: NyxTune, env: Double = 1) -> Int {
         let l = Double(max(0, min(100, level)))
         guard l > 0 else { return 0 }
         let lo = tune.low
+        let v: Double
         switch self {
-        case .steady: return Int(l)
-        case .wave: return Int((l * (lo + (1 - lo) * (0.5 + 0.5 * sin(2 * .pi * t / tune.wave)))).rounded())
-        case .pulse: return t.truncatingRemainder(dividingBy: tune.pulse) / tune.pulse < tune.duty ? Int(l) : Int((l * lo).rounded())
-        case .steps: return Int((l * [0.2, 0.4, 0.6, 0.8, 1.0, 0][Int(t / tune.steps) % 6]).rounded())
+        case .steady: v = l
+        case .wave: v = l * (lo + (1 - lo) * (0.5 + 0.5 * sin(2 * .pi * t / tune.wave)))
+        case .pulse: v = t.truncatingRemainder(dividingBy: tune.pulse) / tune.pulse < tune.duty ? l : l * lo
+        case .steps: v = l * [0.2, 0.4, 0.6, 0.8, 1.0, 0][Int(t / tune.steps) % 6]
+        case .build: v = l * min(1, lo + (1 - lo) * t / tune.build)
+        case .random:
+            let x = t / tune.random, n = Int(x), f = x - Double(n)
+            let a = Self.rnd(n), b = Self.rnd(n + 1), k = f * f * (3 - 2 * f)
+            v = l * (lo + (1 - lo) * (a + (b - a) * k))
+        case .custom:
+            guard let p = tune.pattern, !p.isEmpty else { v = l; break }
+            v = l * p[Int(t / NyxTune.patternStep) % p.count]
+        case .music, .tilt: v = l * (lo + (1 - lo) * max(0, min(1, env)))
         }
+        return Int(max(0, min(100, v)).rounded())
     }
 }
 
-/// The settings of the rhythms (the screen «Nyx» → «Налаштувати»): how long a wave is, how fast the pulse beats and how
-/// long a beat lasts, how long a step is, and how low the wave and the pulse go. Kept on this phone only.
+/// The settings of the rhythms (the screen «Nyx»): how long a wave is, how fast the pulse beats and how long a beat
+/// lasts, how long a step is, how long the rise takes, how often «Випадковий» changes, the drawn rhythm, and how low
+/// the rhythms go. Kept on this phone only (and for a far toy, sent along with the command).
 struct NyxTune: Codable, Hashable {
     var wave: Double = 6      // seconds, one whole wave
     var pulse: Double = 1.2   // seconds, one beat and its pause
     var duty: Double = 0.3    // share of the beat that is strong
     var steps: Double = 1.8   // seconds on one step
-    var low: Double = 0.2     // the lowest point of the wave and the pulse, share of the strength
+    var low: Double = 0.2     // the lowest point, share of the strength
+    var build: Double = 300   // seconds from «low» to the full strength
+    var random: Double = 2    // seconds between two random points
+    var pattern: [Double]?    // «Свій»: one value (0…1) every 0.05 s
+    static let patternStep = 0.05
 
     /// Anything from the page: missing or silly numbers fall back to what is sane.
     init(_ d: [String: Any] = [:]) {
@@ -50,8 +84,17 @@ struct NyxTune: Codable, Hashable {
         }
         wave = n("wave", 1, 30, 6); pulse = n("pulse", 0.25, 5, 1.2); duty = n("duty", 0.1, 0.9, 0.3)
         steps = n("steps", 0.4, 10, 1.8); low = n("low", 0, 0.9, 0.2)
+        build = n("build", 30, 1800, 300); random = n("random", 0.5, 10, 2)
+        if let raw = d["pattern"] as? [Any] {
+            let p = raw.prefix(400).compactMap { ($0 as? NSNumber)?.doubleValue }.map { min(1, max(0, $0.isFinite ? $0 : 0)) }
+            pattern = p.isEmpty ? nil : p
+        }
     }
-    var dict: [String: Any] { ["wave": wave, "pulse": pulse, "duty": duty, "steps": steps, "low": low] }
+    var dict: [String: Any] {
+        var d: [String: Any] = ["wave": wave, "pulse": pulse, "duty": duty, "steps": steps, "low": low, "build": build, "random": random]
+        if let pattern { d["pattern"] = pattern }
+        return d
+    }
 
     static let key = "nyx.tune"
     static func load() -> NyxTune {
@@ -70,12 +113,16 @@ struct NyxAttributes: ActivityAttributes {
         var remote: Bool = false
         /// the rhythm waits for the app to be opened (iOS ended the background time); the strength stays steady
         var paused: Bool = false
+        /// the timer: the toy stops at this moment
+        var endsAt: Date? = nil
+        /// the preset that plays (its name), if one was chosen
+        var preset: String? = nil
     }
     var name: String
 }
 
 enum NyxCmd {
-    case step(Int), nextRhythm, stop, power(Bool), preset(String), playPause, play(Bool)
+    case step(Int), nextRhythm, stop, power(Bool), preset(String), playPause, play(Bool), nextPreset
 }
 
 /// Set by the app at launch; the widget extension never runs these intents itself.
@@ -108,7 +155,6 @@ struct NyxRhythmIntent: LiveActivityIntent {
 
 struct NyxStopIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Nyx: стоп"
-    static var isDiscoverable: Bool = false
     func perform() async throws -> some IntentResult {
         await NyxHook.run?(.stop)
         return .result()
@@ -243,7 +289,6 @@ struct NyxTapIntent: LiveActivityIntent {
 /// One button for both: plays (the last strength) when it is quiet, stops when it plays. Its look follows.
 struct NyxPlayPauseIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Nyx: пуск або стоп"
-    static var isDiscoverable: Bool = false
     func perform() async throws -> some IntentResult {
         await NyxHook.run?(.playPause)
         return .result()
@@ -258,6 +303,16 @@ struct NyxPlayIntent: SetValueIntent, LiveActivityIntent {
     @Parameter(title: "Грає") var value: Bool
     func perform() async throws -> some IntentResult {
         await NyxHook.run?(.play(value))
+        return .result()
+    }
+}
+
+/// The plate: the next preset (all of them in a row — the ready ones, then mine).
+struct NyxNextPresetIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Nyx: наступний пресет"
+    static var isDiscoverable: Bool = false
+    func perform() async throws -> some IntentResult {
+        await NyxHook.run?(.nextPreset)
         return .result()
     }
 }

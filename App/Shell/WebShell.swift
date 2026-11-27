@@ -235,6 +235,12 @@ final class ShellModel: NSObject, ObservableObject {
             case "tune": nyx.set(tune: NyxTune(m["tune"] as? [String: Any] ?? [:]))
             case "presets": nyx.savePresets(m["list"] as? [[String: Any]] ?? [])
             case "test": nyx.selfTest()
+            case "timer": nyx.setTimer(minutes: (m["minutes"] as? NSNumber)?.doubleValue ?? 0)
+            case "preset":
+                if let x = m["preset"] as? [String: Any], let r = NyxRhythm(rawValue: x["rhythm"] as? String ?? "") {
+                    nyx.apply(preset: NyxPreset(id: x["id"] as? String ?? "page", name: String((x["name"] as? String ?? "").prefix(24)), rhythm: r,
+                                                level: (x["level"] as? NSNumber)?.intValue, tune: NyxTune(x["tune"] as? [String: Any] ?? [:])))
+                }
             case "remote": nyx.remote(level: m["level"] as? Int, rhythm: NyxRhythm(rawValue: m["rhythm"] as? String ?? ""), on: m["on"] as? Bool ?? false)
             default: break
             }

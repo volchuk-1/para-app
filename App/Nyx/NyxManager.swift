@@ -48,7 +48,15 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     /// what the screen shows under «Підключено»: how the writes go
     private var sent = 0, answered = 0, failed = 0, timedOut = 0
     private var lastError: String?
-    private let t0 = Date()
+    /// when the rhythm began (the rise of «Наростання» and the drawn rhythm count from here)
+    private var rhythmStart = Date()
+    /// the timer: 0 at this moment
+    private(set) var timerEnd: Date?
+    private var timerCheck: Timer?
+    private var batteryTimer: Timer?
+    /// the preset that plays now (its name on the plate), until something else is chosen by hand
+    private var presetName: String?
+    private let sensors = NyxSensors()
     /// Every call here comes on the main queue (Bluetooth too: its queue is nil), so UIKit may be asked directly.
     private var background: Bool { MainActor.assumeIsolated { UIApplication.shared.applicationState == .background } }
     private var bgTask: UIBackgroundTaskIdentifier = .invalid
@@ -95,7 +103,9 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
             if phase != "on" { power(true) }
             set(level: level + d)
         case .nextRhythm:
-            set(rhythm: rhythm.next)
+            var r = rhythm.next
+            if r == .custom && tune.pattern == nil { r = r.next }   // nothing drawn yet
+            set(rhythm: r)
         case .stop:
             set(level: 0)
         case .power(let on):
@@ -109,17 +119,66 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
             set(level: level > 0 ? level : (last > 0 ? last : 40))
         case .preset(let id):
             guard let x = NyxPresets.find(id) else { return }
-            tune = x.tune; x.tune.save()
-            rhythm = x.rhythm; defaults.set(x.rhythm.rawValue, forKey: "nyx.rhythm")
-            let keep = level > 0 ? level : defaults.integer(forKey: "nyx.level")
-            if phase != "on" { power(true) }
-            set(level: x.level ?? (keep > 0 ? keep : 40))
+            apply(preset: x)
+        case .nextPreset:
+            let all = NyxPresets.all()
+            guard !all.isEmpty else { return }
+            let i = ((all.firstIndex { $0.name == presetName } ?? -1) + 1) % all.count
+            apply(preset: all[i])
+        }
+    }
+
+    /// A preset: its rhythm, its settings, its strength (or the last one), and its name on the plate.
+    func apply(preset x: NyxPreset) {
+        tune = x.tune; x.tune.save()
+        if rhythm != x.rhythm { rhythmStart = Date() }
+        rhythm = x.rhythm; defaults.set(x.rhythm.rawValue, forKey: "nyx.rhythm")
+        sensorsFollow()
+        let keep = level > 0 ? level : defaults.integer(forKey: "nyx.level")
+        if phase != "on" { power(true) }
+        set(level: x.level ?? (keep > 0 ? keep : 40))
+        presetName = x.name
+        changed()
+    }
+
+    /// «Вимкнути через…»: 0 minutes — no timer.
+    func setTimer(minutes m: Double) {
+        timerCheck?.invalidate(); timerCheck = nil
+        timerEnd = m > 0 ? Date().addingTimeInterval(m * 60) : nil
+        if let end = timerEnd {
+            timerCheck = Timer.scheduledTimer(withTimeInterval: max(1, end.timeIntervalSinceNow), repeats: false) { [weak self] _ in self?.timeUp() }
+        }
+        holdBackground()
+        changed()
+    }
+
+    private func timeUp() {
+        guard let end = timerEnd, Date() >= end.addingTimeInterval(-0.5) else { return }
+        timerEnd = nil; timerCheck?.invalidate(); timerCheck = nil
+        set(level: 0)
+    }
+
+    /// The microphone and the tilt run only while their rhythm plays and the app is open.
+    private func sensorsFollow() {
+        switch rhythm {
+        case .music where !background:
+            sensors.stopTilt()
+            sensors.startMic { [weak self] ok in
+                guard let self, !ok else { return }
+                self.error = "Немає доступу до мікрофона: Параметри → DaVincit → Мікрофон."
+                self.changed()
+            }
+        case .tilt where !background:
+            sensors.stopMic(); sensors.startTilt()
+        default:
+            sensors.stopAll()
         }
     }
 
     /// The page's own presets, for the buttons outside the app.
     func savePresets(_ list: [[String: Any]]) {
         NyxPresets.save(page: list)
+        ParaShortcuts.updateAppShortcutParameters()   // Siri knows the new names
         if #available(iOS 18.0, *) { ControlCenter.shared.reloadControls(ofKind: Self.presetKind) }
     }
 
@@ -134,6 +193,8 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
             connect()
         } else {
             halt()
+            sensors.stopAll()
+            setTimer(minutes: 0)
             if let p = peripheral { manager().cancelPeripheralConnection(p) }
             phase = "off"
             endActivity()
@@ -149,14 +210,18 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     }
 
     func set(rhythm r: NyxRhythm) {
+        if r != rhythm { rhythmStart = Date() }
         rhythm = r
+        presetName = nil
         defaults.set(r.rawValue, forKey: "nyx.rhythm")
+        sensorsFollow()
         holdBackground()
         pump(); changed()
     }
 
     /// The settings of the rhythms (from this screen, or from the far partner's screen).
     func set(tune t: NyxTune) {
+        if t != tune { presetName = nil }
         tune = t
         t.save()
         pump(); changed()
@@ -166,7 +231,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     func remote(level l: Int?, rhythm r: NyxRhythm?, on: Bool) {
         if !on { remoteAt = nil; set(level: 0); return }
         remoteAt = Date()
-        if let r, r != rhythm { rhythm = r }
+        if let r, r != rhythm { rhythm = r; rhythmStart = Date(); presetName = nil }
         if let l { level = max(0, min(100, l)) }
         pump(); changed()
         if watch == nil {
@@ -279,6 +344,8 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     }
 
     private func gone() {
+        batteryTimer?.invalidate(); batteryTimer = nil
+        sensors.stopAll()
         tx = nil; battChr = nil; inFlight = false; lastSent = -1; tickGen += 1; changedWhileBusy = false
         level = 0; remoteAt = nil
         phase = wantOn ? "connecting" : "off"
@@ -316,6 +383,11 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         defaults.set(true, forKey: NyxHook.onKey)
         if #available(iOS 18.0, *) { ControlCenter.shared.reloadControls(ofKind: Self.controlKind) }
         lastSent = -1
+        batteryTimer?.invalidate()
+        batteryTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            guard let self, let p = self.peripheral, p.state == .connected, let b = self.battChr else { return }
+            p.readValue(for: b)
+        }
         pump(); changed()
     }
 
@@ -342,7 +414,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private func afterWrite() {
         if changedWhileBusy { changedWhileBusy = false; pump(force: true); return }
         guard level > 0 else { return }
-        let rhythmOn = rhythm != .steady && !paused
+        let rhythmOn = (rhythm != .steady && !paused) || timerEnd != nil
         if rhythmOn && background && writeType == .withResponse { pump(force: true); return }   // in the background: right after the answer
         tickGen += 1
         let gen = tickGen
@@ -361,7 +433,8 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private func pump(force: Bool = false) {
         guard peripheral?.state == .connected, tx != nil else { return }
         if inFlight { changedWhileBusy = true; return }
-        let out = (paused ? NyxRhythm.steady : rhythm).output(level: level, at: Date().timeIntervalSince(t0), tune: tune)
+        if let end = timerEnd, Date() >= end { timeUp(); return }
+        let out = (paused ? NyxRhythm.steady : rhythm).output(level: level, at: Date().timeIntervalSince(rhythmStart), tune: tune, env: sensors.env)
         if out == lastSent && !force { return }
         if out == lastSent && out == 0 { return }   // 0 is not repeated
         send(out)
@@ -412,6 +485,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private func wentBack() {
         // «На відстані» needs the app open: in the background nobody could stop it
         if remoteAt != nil { remoteAt = nil; set(level: 0) }
+        sensors.stopAll()   // the microphone and the tilt: only with the app open (the last value stays)
         holdBackground()
         pump(force: true)
     }
@@ -419,7 +493,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     /// A rhythm in the background lives as long as iOS lets the app run (about half a minute after the app leaves the
     /// screen or after a button of the plate). Then: the chosen strength, steady, and the plate says so.
     private func holdBackground() {
-        guard background, rhythm != .steady, level > 0, bgTask == .invalid else { return }
+        guard background, rhythm != .steady || timerEnd != nil, level > 0, bgTask == .invalid else { return }
         paused = false
         bgTask = MainActor.assumeIsolated { UIApplication.shared.beginBackgroundTask(withName: "nyx") { [weak self] in self?.pauseRhythm() } }
     }
@@ -434,6 +508,8 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
 
     private func cameBack() {
         endBg()
+        sensorsFollow()
+        if let end = timerEnd, Date() >= end { timeUp() }
         if paused { paused = false; pump(force: true); changed() }
     }
 
@@ -469,6 +545,8 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         if let battery { s["battery"] = battery }
         if let error { s["error"] = error }
         if let n = peripheral?.name { s["name"] = n }
+        if let timerEnd { s["endsAt"] = timerEnd.timeIntervalSince1970 * 1000 }
+        if let presetName { s["preset"] = presetName }
         var d: [String: Any] = ["write": writeType == .withResponse ? "з відповіддю" : "без відповіді", "sent": sent, "ok": answered, "failed": failed, "timeout": timedOut, "last": lastSent]
         if let tx { d["props"] = Self.props(tx.properties) }
         if let lastError { d["error"] = lastError }
@@ -484,7 +562,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private func syncActivity() {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         guard phase == "on" else { return }
-        let st = NyxAttributes.ContentState(level: level, rhythm: rhythm, battery: battery, remote: remoteAt != nil, paused: paused)
+        let st = NyxAttributes.ContentState(level: level, rhythm: rhythm, battery: battery, remote: remoteAt != nil, paused: paused, endsAt: timerEnd, preset: presetName)
         if st == shown { return }
         shown = st
         let content = ActivityContent(state: st, staleDate: nil)
