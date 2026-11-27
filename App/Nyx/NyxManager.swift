@@ -22,6 +22,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     static let batChr = CBUUID(string: "2A19")
     static let controlKind = "com.volchuk.para.control.nyx"
     static let presetKind = "com.volchuk.para.control.nyx.preset"
+    static let playKind = "com.volchuk.para.control.nyx.stop"
     private var widgetShown = ""
 
     private let defaults = UserDefaults(suiteName: Shared.group) ?? .standard
@@ -99,6 +100,13 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
             set(level: 0)
         case .power(let on):
             power(on)
+        case .playPause:
+            apply(.play(level == 0))
+        case .play(let on):
+            if !on { set(level: 0); return }
+            let last = defaults.integer(forKey: "nyx.level")
+            if phase != "on" { power(true) }
+            set(level: level > 0 ? level : (last > 0 ? last : 40))
         case .preset(let id):
             guard let x = NyxPresets.find(id) else { return }
             tune = x.tune; x.tune.save()
@@ -446,12 +454,14 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         let key = "\(phase)|\(level)|\(rhythm.rawValue)|\(battery ?? -1)"
         guard key != widgetShown else { return }
         let wasOn = widgetShown.hasPrefix("on|"), nowOn = phase == "on"
+        let wasPlaying = wasOn && !widgetShown.hasPrefix("on|0|"), nowPlaying = nowOn && level > 0
         widgetShown = key
         var d: [String: Any] = ["phase": phase, "level": level, "rhythm": rhythm.rawValue]
         if let battery { d["battery"] = battery }
         defaults.set(d, forKey: NyxState.key)
         WidgetCenter.shared.reloadTimelines(ofKind: "nyx")
         if wasOn != nowOn, #available(iOS 18.0, *) { ControlCenter.shared.reloadControls(ofKind: Self.controlKind) }
+        if wasPlaying != nowPlaying, #available(iOS 18.0, *) { ControlCenter.shared.reloadControls(ofKind: Self.playKind) }
     }
 
     func snapshot() -> [String: Any] {

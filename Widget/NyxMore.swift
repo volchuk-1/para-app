@@ -43,13 +43,23 @@ struct NyxRhythmControl: ControlWidget {
 }
 
 @available(iOS 18.0, *)
+struct NyxPlayValue: ControlValueProvider {
+    var previewValue: Bool { false }
+    func currentValue() async throws -> Bool { let s = NyxState.load(); return s.phase == "on" && s.level > 0 }
+}
+
+/// Пуск і стоп однією кнопкою (the same place as the old «стоп»): on — plays the last strength, off — 0.
+@available(iOS 18.0, *)
 struct NyxStopControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "com.volchuk.para.control.nyx.stop") {
-            ControlWidgetButton(action: NyxStopIntent()) { Label("Nyx · стоп", systemImage: "stop.circle.fill") }
+        StaticControlConfiguration(kind: "com.volchuk.para.control.nyx.stop", provider: NyxPlayValue()) { playing in
+            ControlWidgetToggle("Nyx", isOn: playing, action: NyxPlayIntent()) { on in
+                Label(on ? "грає" : "пауза", systemImage: on ? "stop.fill" : "play.fill")
+            }
+            .tint(.green)
         }
-        .displayName("Nyx · стоп")
-        .description("Сила 0, підключення лишається.")
+        .displayName("Nyx · пуск/стоп")
+        .description("Одна кнопка: пуск з останньою силою або стоп.")
     }
 }
 
@@ -111,11 +121,11 @@ struct NyxWidgetView: View {
     }
 
     private var circular: some View {
-        Button(intent: NyxTapIntent(stop: playing)) {
+        Button(intent: NyxPlayPauseIntent()) {
             ZStack {
                 AccessoryWidgetBackground()
                 VStack(spacing: 0) {
-                    Image(systemName: playing ? "stop.fill" : "heart.fill").font(.system(size: 15, weight: .bold))
+                    Image(systemName: playing ? "stop.fill" : "play.fill").font(.system(size: 15, weight: .bold))
                     Text(on ? "\(s.level)%" : "Nyx").font(.system(size: 12, weight: .bold)).monospacedDigit()
                 }
             }
@@ -134,7 +144,7 @@ struct NyxWidgetView: View {
                 Button(intent: NyxStepIntent(delta: -10)) { Image(systemName: "minus").frame(maxWidth: .infinity, minHeight: 24) }
                 Button(intent: NyxStepIntent(delta: 10)) { Image(systemName: "plus").frame(maxWidth: .infinity, minHeight: 24) }
                 Button(intent: NyxRhythmIntent()) { Image(systemName: "water.waves").frame(maxWidth: .infinity, minHeight: 24) }
-                Button(intent: NyxStopIntent()) { Image(systemName: "stop.fill").frame(maxWidth: .infinity, minHeight: 24) }
+                Button(intent: NyxPlayPauseIntent()) { Image(systemName: playing ? "stop.fill" : "play.fill").frame(maxWidth: .infinity, minHeight: 24) }
             }
             .font(.system(size: 13, weight: .bold))
             .buttonStyle(.plain)
@@ -157,7 +167,7 @@ struct NyxWidgetView: View {
             HStack(spacing: 6) {
                 Button(intent: NyxStepIntent(delta: -10)) { Image(systemName: "minus").frame(maxWidth: .infinity, minHeight: 30) }
                 Button(intent: NyxStepIntent(delta: 10)) { Image(systemName: "plus").frame(maxWidth: .infinity, minHeight: 30) }
-                Button(intent: NyxStopIntent()) { Image(systemName: "stop.fill").frame(maxWidth: .infinity, minHeight: 30) }
+                Button(intent: NyxPlayPauseIntent()) { Image(systemName: playing ? "stop.fill" : "play.fill").frame(maxWidth: .infinity, minHeight: 30) }
             }
             .font(.system(size: 14, weight: .bold))
             .buttonStyle(.plain)

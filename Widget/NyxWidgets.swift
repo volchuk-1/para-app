@@ -25,8 +25,9 @@ private struct NyxButtons: View {
             Button(intent: NyxStepIntent(delta: -10)) { Image(systemName: "minus").frame(maxWidth: .infinity, minHeight: 38) }
             Button(intent: NyxStepIntent(delta: 10)) { Image(systemName: "plus").frame(maxWidth: .infinity, minHeight: 38) }
             Button(intent: NyxRhythmIntent()) { Image(systemName: rhythmIcon(state.rhythm.next)).frame(maxWidth: .infinity, minHeight: 38) }
-            Button(intent: NyxStopIntent()) { Image(systemName: "stop.fill").frame(maxWidth: .infinity, minHeight: 38) }
-                .tint(stopRed)
+            // one button for both: ▶ when quiet (the last strength), ■ when it plays
+            Button(intent: NyxPlayPauseIntent()) { Image(systemName: state.level > 0 ? "stop.fill" : "play.fill").frame(maxWidth: .infinity, minHeight: 38) }
+                .tint(state.level > 0 ? stopRed : Color(red: 0x52 / 255, green: 0x7A / 255, blue: 0x5C / 255))
         }
         .font(.system(size: 17, weight: .bold))
         .buttonStyle(.borderedProminent)

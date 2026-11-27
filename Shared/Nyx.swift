@@ -75,7 +75,7 @@ struct NyxAttributes: ActivityAttributes {
 }
 
 enum NyxCmd {
-    case step(Int), nextRhythm, stop, power(Bool), preset(String)
+    case step(Int), nextRhythm, stop, power(Bool), preset(String), playPause, play(Bool)
 }
 
 /// Set by the app at launch; the widget extension never runs these intents itself.
@@ -145,6 +145,12 @@ enum NyxPresets {
         NyxPreset(id: "b2", name: "Серце", rhythm: .pulse, level: nil, tune: NyxTune(["pulse": 0.85, "duty": 0.25, "low": 0.3])),
         NyxPreset(id: "b3", name: "Швидкий пульс", rhythm: .pulse, level: nil, tune: NyxTune(["pulse": 0.4, "duty": 0.4, "low": 0.1])),
         NyxPreset(id: "b4", name: "Драбина", rhythm: .steps, level: nil, tune: NyxTune(["steps": 1.0])),
+        NyxPreset(id: "b5", name: "Прибій", rhythm: .wave, level: nil, tune: NyxTune(["wave": 9.0, "low": 0.05])),
+        NyxPreset(id: "b6", name: "Шторм", rhythm: .wave, level: nil, tune: NyxTune(["wave": 1.5, "low": 0.5])),
+        NyxPreset(id: "b7", name: "Тремтіння", rhythm: .pulse, level: nil, tune: NyxTune(["pulse": 0.3, "duty": 0.5, "low": 0.6])),
+        NyxPreset(id: "b8", name: "Метроном", rhythm: .pulse, level: nil, tune: NyxTune(["pulse": 1.0, "duty": 0.5, "low": 0.0])),
+        NyxPreset(id: "b9", name: "Дражнилка", rhythm: .pulse, level: nil, tune: NyxTune(["pulse": 4.0, "duty": 0.25, "low": 0.0])),
+        NyxPreset(id: "b10", name: "Довгі сходи", rhythm: .steps, level: nil, tune: NyxTune(["steps": 4.0])),
     ]
     static let key = "nyx.presets"
     static func mine() -> [NyxPreset] {
@@ -230,6 +236,28 @@ struct NyxTapIntent: LiveActivityIntent {
     init(stop: Bool) { self.stop = stop }
     func perform() async throws -> some IntentResult {
         await NyxHook.run?(stop ? .stop : .step(10))
+        return .result()
+    }
+}
+
+/// One button for both: plays (the last strength) when it is quiet, stops when it plays. Its look follows.
+struct NyxPlayPauseIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Nyx: пуск або стоп"
+    static var isDiscoverable: Bool = false
+    func perform() async throws -> some IntentResult {
+        await NyxHook.run?(.playPause)
+        return .result()
+    }
+}
+
+/// «Пункт керування»: the same as a switch (on — plays, off — stops).
+@available(iOS 18.0, *)
+struct NyxPlayIntent: SetValueIntent, LiveActivityIntent {
+    static var title: LocalizedStringResource = "Nyx: пуск/стоп"
+    static var isDiscoverable: Bool = false
+    @Parameter(title: "Грає") var value: Bool
+    func perform() async throws -> some IntentResult {
+        await NyxHook.run?(.play(value))
         return .result()
     }
 }
