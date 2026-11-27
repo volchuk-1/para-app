@@ -8,9 +8,11 @@ import WidgetKit
 /// Nothing goes to Magic Motion or to our server from here: the server only relays «На відстані» to the pages,
 /// the pages hand it to this file. Every disconnection means strength 0.
 ///
-/// One write at a time: while a write is waiting for its answer, only the newest strength waits behind it.
-/// Rhythms are counted by the wall clock; with the app in front a write goes every 0.12 s, in the background the next
-/// write goes right after the answer to the last one (the answers are what keeps iOS letting the app run).
+/// One write at a time: while a write is waiting for its answer, only the newest strength waits behind it. An answer that
+/// does not come in 0.6 s is not waited for any longer (the first build waited forever: connected, but silent).
+/// The kind of write follows what the toy says it can do; a refused write switches to the other kind.
+/// While the strength is above 0 the toy hears it again every second. Rhythms are counted by the wall clock: a write
+/// every 0.12 s with the app in front, in the background the next one right after the answer to the last one.
 final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let shared = NyxManager()
 
@@ -19,6 +21,8 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     static let batSvc = CBUUID(string: "180F")
     static let batChr = CBUUID(string: "2A19")
     static let controlKind = "com.volchuk.para.control.nyx"
+    static let presetKind = "com.volchuk.para.control.nyx.preset"
+    private var widgetShown = ""
 
     private let defaults = UserDefaults(suiteName: Shared.group) ?? .standard
     private var central: CBCentralManager?
@@ -36,7 +40,13 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private var wantOn = false
     private var inFlight = false
     private var lastSent = -1
-    private var tickScheduled = false
+    private var tickGen = 0
+    private var writeSeq = 0
+    private var changedWhileBusy = false
+    private var writeType: CBCharacteristicWriteType = .withResponse
+    /// what the screen shows under «Підключено»: how the writes go
+    private var sent = 0, answered = 0, failed = 0, timedOut = 0
+    private var lastError: String?
     private let t0 = Date()
     /// Every call here comes on the main queue (Bluetooth too: its queue is nil), so UIKit may be asked directly.
     private var background: Bool { MainActor.assumeIsolated { UIApplication.shared.applicationState == .background } }
@@ -89,7 +99,20 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
             set(level: 0)
         case .power(let on):
             power(on)
+        case .preset(let id):
+            guard let x = NyxPresets.find(id) else { return }
+            tune = x.tune; x.tune.save()
+            rhythm = x.rhythm; defaults.set(x.rhythm.rawValue, forKey: "nyx.rhythm")
+            let keep = level > 0 ? level : defaults.integer(forKey: "nyx.level")
+            if phase != "on" { power(true) }
+            set(level: x.level ?? (keep > 0 ? keep : 40))
         }
+    }
+
+    /// The page's own presets, for the buttons outside the app.
+    func savePresets(_ list: [[String: Any]]) {
+        NyxPresets.save(page: list)
+        if #available(iOS 18.0, *) { ControlCenter.shared.reloadControls(ofKind: Self.presetKind) }
     }
 
     func power(_ on: Bool) {
@@ -150,11 +173,10 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     func halt() {
         level = 0
         remoteAt = nil
-        if let p = peripheral, let tx, p.state == .connected {
+        if peripheral?.state == .connected, tx != nil {
             // past the queue: iOS keeps the order of writes, so this 0 is the last word even if one is on its way
-            p.writeValue(Self.cmd(0), for: tx, type: .withResponse)
-            inFlight = true
-            lastSent = 0
+            inFlight = false
+            send(0)
         }
         changed()
     }
@@ -249,7 +271,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     }
 
     private func gone() {
-        tx = nil; battChr = nil; inFlight = false; lastSent = -1; tickScheduled = false
+        tx = nil; battChr = nil; inFlight = false; lastSent = -1; tickGen += 1; changedWhileBusy = false
         level = 0; remoteAt = nil
         phase = wantOn ? "connecting" : "off"
         endActivity()
@@ -265,7 +287,12 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
 
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor s: CBService, error: Error?) {
         for ch in s.characteristics ?? [] {
-            if ch.uuid == Self.txID { tx = ch; ready(p) }
+            if ch.uuid == Self.txID {
+                tx = ch
+                // the toy says how it wants to be written to; «with an answer» when it can do both
+                writeType = ch.properties.contains(.write) || !ch.properties.contains(.writeWithoutResponse) ? .withResponse : .withoutResponse
+                ready(p)
+            }
             if ch.uuid == Self.batChr {
                 battChr = ch
                 p.readValue(for: ch)
@@ -289,14 +316,31 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     }
 
     func peripheral(_ p: CBPeripheral, didWriteValueFor ch: CBCharacteristic, error: Error?) {
+        guard ch.uuid == Self.txID else { return }
+        if let error {
+            failed += 1
+            lastError = error.localizedDescription
+            // refused «with an answer»: try the other kind if the toy has it
+            if writeType == .withResponse, ch.properties.contains(.writeWithoutResponse) { writeType = .withoutResponse; lastSent = -1 }
+        } else {
+            answered += 1
+        }
         inFlight = false
-        guard rhythm != .steady, level > 0, !paused else { pump(); return }
-        if background { pump(force: true); return }   // in the background: right after the answer
-        guard !tickScheduled else { return }
-        tickScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-            self?.tickScheduled = false
-            self?.pump(force: true)
+        afterWrite()
+    }
+
+    /// A write is done (answered, given up on, or sent without an answer): a change that waited goes now, else the next
+    /// beat of the rhythm, else the same strength again in a second (so the toy never forgets it).
+    private func afterWrite() {
+        if changedWhileBusy { changedWhileBusy = false; pump(force: true); return }
+        guard level > 0 else { return }
+        let rhythmOn = rhythm != .steady && !paused
+        if rhythmOn && background && writeType == .withResponse { pump(force: true); return }   // in the background: right after the answer
+        tickGen += 1
+        let gen = tickGen
+        DispatchQueue.main.asyncAfter(deadline: .now() + (rhythmOn ? 0.12 : 1.0)) { [weak self] in
+            guard let self, self.tickGen == gen else { return }
+            self.pump(force: true)
         }
     }
 
@@ -305,15 +349,56 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         return Data([0x10, 0xff, 0x04, 0x0a, 0x32, 0x32, 0x00, 0x04, 0x08, v, 0x64, 0x00, 0x04, 0x08, v, 0x64, 0x01])
     }
 
-    /// Sends what the toy should do now, unless a write is still waiting for its answer (then the answer calls this again).
+    /// Sends what the toy should do now, unless a write is still waiting for its answer (then it goes right after).
     private func pump(force: Bool = false) {
-        guard let p = peripheral, let tx, p.state == .connected, !inFlight else { return }
+        guard peripheral?.state == .connected, tx != nil else { return }
+        if inFlight { changedWhileBusy = true; return }
         let out = (paused ? NyxRhythm.steady : rhythm).output(level: level, at: Date().timeIntervalSince(t0), tune: tune)
         if out == lastSent && !force { return }
-        if out == lastSent && (rhythm == .steady || level == 0) { return }
-        inFlight = true
+        if out == lastSent && out == 0 { return }   // 0 is not repeated
+        send(out)
+    }
+
+    private func send(_ out: Int) {
+        guard let p = peripheral, let tx, p.state == .connected else { return }
         lastSent = out
-        p.writeValue(Self.cmd(out), for: tx, type: .withResponse)
+        sent += 1
+        writeSeq += 1
+        let seq = writeSeq
+        tickGen += 1   // a beat that was waiting is not needed: this write starts the count again
+        if writeType == .withResponse {
+            inFlight = true
+            p.writeValue(Self.cmd(out), for: tx, type: .withResponse)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self, self.inFlight, self.writeSeq == seq else { return }
+                self.timedOut += 1
+                self.inFlight = false
+                self.afterWrite()
+            }
+        } else {
+            p.writeValue(Self.cmd(out), for: tx, type: .withoutResponse)
+            DispatchQueue.main.async { [weak self] in self?.afterWrite() }
+        }
+        if sent <= 3 || sent % 20 == 0 { changed() }   // the counters on the screen, without a flood
+    }
+
+    /// «Перевірити»: 60 % for two seconds with one kind of write, then two with the other, then back to what was set.
+    func selfTest() {
+        guard peripheral?.state == .connected, tx != nil else { return }
+        let keep = writeType, back = level
+        let kinds: [CBCharacteristicWriteType] = [.withResponse, .withoutResponse]
+        level = 60   // the beat of «one second again» keeps 60 too, not the old strength
+        inFlight = false
+        writeType = kinds[0]; send(60)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            self.inFlight = false; self.writeType = kinds[1]; self.send(60)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self else { return }
+                self.writeType = keep; self.inFlight = false; self.lastSent = -1
+                self.level = back; self.pump(force: true); self.changed()
+            }
+        }
     }
 
     private func wentBack() {
@@ -353,6 +438,20 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private func changed() {
         onChange?(snapshot())
         syncActivity()
+        syncWidgets()
+    }
+
+    /// The lock-screen and home widgets and the Control Center button: only on a real change (not on every beat).
+    private func syncWidgets() {
+        let key = "\(phase)|\(level)|\(rhythm.rawValue)|\(battery ?? -1)"
+        guard key != widgetShown else { return }
+        let wasOn = widgetShown.hasPrefix("on|"), nowOn = phase == "on"
+        widgetShown = key
+        var d: [String: Any] = ["phase": phase, "level": level, "rhythm": rhythm.rawValue]
+        if let battery { d["battery"] = battery }
+        defaults.set(d, forKey: NyxState.key)
+        WidgetCenter.shared.reloadTimelines(ofKind: "nyx")
+        if wasOn != nowOn, #available(iOS 18.0, *) { ControlCenter.shared.reloadControls(ofKind: Self.controlKind) }
     }
 
     func snapshot() -> [String: Any] {
@@ -360,7 +459,16 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         if let battery { s["battery"] = battery }
         if let error { s["error"] = error }
         if let n = peripheral?.name { s["name"] = n }
+        var d: [String: Any] = ["write": writeType == .withResponse ? "з відповіддю" : "без відповіді", "sent": sent, "ok": answered, "failed": failed, "timeout": timedOut, "last": lastSent]
+        if let tx { d["props"] = Self.props(tx.properties) }
+        if let lastError { d["error"] = lastError }
+        s["diag"] = d
         return s
+    }
+
+    static func props(_ p: CBCharacteristicProperties) -> String {
+        let all: [(CBCharacteristicProperties, String)] = [(.write, "write"), (.writeWithoutResponse, "writeNoResp"), (.read, "read"), (.notify, "notify")]
+        return all.filter { p.contains($0.0) }.map { $0.1 }.joined(separator: ",")
     }
 
     private func syncActivity() {

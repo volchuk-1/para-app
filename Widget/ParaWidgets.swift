@@ -247,11 +247,10 @@ struct ParaWidgets: WidgetBundle {
         PingLiveActivity()
         DateLiveActivity()
         TaskLiveActivity()
-        NyxLiveActivity()
+        NyxWidgets().body   // a bundle may hold ten: Nyx is its own group
         if #available(iOS 18.0, *) {
             VoiceNoteControl()
             MomentControl()
-            NyxControl()
         }
     }
 }

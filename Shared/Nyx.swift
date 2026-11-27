@@ -75,7 +75,7 @@ struct NyxAttributes: ActivityAttributes {
 }
 
 enum NyxCmd {
-    case step(Int), nextRhythm, stop, power(Bool)
+    case step(Int), nextRhythm, stop, power(Bool), preset(String)
 }
 
 /// Set by the app at launch; the widget extension never runs these intents itself.
@@ -123,6 +123,113 @@ struct NyxPowerIntent: SetValueIntent, LiveActivityIntent {
     @Parameter(title: "Увімкнено") var value: Bool
     func perform() async throws -> some IntentResult {
         await NyxHook.run?(.power(value))
+        return .result()
+    }
+}
+
+// MARK: - presets (the screen keeps them; the buttons outside the app read them from here)
+
+struct NyxPreset: Codable, Hashable {
+    var id: String
+    var name: String
+    var rhythm: NyxRhythm
+    var level: Int?
+    var tune: NyxTune
+}
+
+enum NyxPresets {
+    /// The same five as on the screen (web/v37.js PRESETS0), with the same ids.
+    static let builtIn: [NyxPreset] = [
+        NyxPreset(id: "b0", name: "Повільна хвиля", rhythm: .wave, level: nil, tune: NyxTune(["wave": 14.0, "low": 0.1])),
+        NyxPreset(id: "b1", name: "Швидка хвиля", rhythm: .wave, level: nil, tune: NyxTune(["wave": 2.5, "low": 0.3])),
+        NyxPreset(id: "b2", name: "Серце", rhythm: .pulse, level: nil, tune: NyxTune(["pulse": 0.85, "duty": 0.25, "low": 0.3])),
+        NyxPreset(id: "b3", name: "Швидкий пульс", rhythm: .pulse, level: nil, tune: NyxTune(["pulse": 0.4, "duty": 0.4, "low": 0.1])),
+        NyxPreset(id: "b4", name: "Драбина", rhythm: .steps, level: nil, tune: NyxTune(["steps": 1.0])),
+    ]
+    static let key = "nyx.presets"
+    static func mine() -> [NyxPreset] {
+        guard let d = UserDefaults(suiteName: Shared.group)?.data(forKey: key) else { return [] }
+        return (try? JSONDecoder().decode([NyxPreset].self, from: d)) ?? []
+    }
+    static func all() -> [NyxPreset] { builtIn + mine() }
+    static func find(_ id: String) -> NyxPreset? { all().first { $0.id == id } }
+    /// From the page: [{id, name, rhythm, level, tune}]
+    static func save(page list: [[String: Any]]) {
+        let items: [NyxPreset] = list.prefix(12).compactMap { x in
+            guard let id = x["id"] as? String, let name = x["name"] as? String, let r = NyxRhythm(rawValue: x["rhythm"] as? String ?? "") else { return nil }
+            return NyxPreset(id: id, name: String(name.prefix(24)), rhythm: r, level: (x["level"] as? NSNumber)?.intValue, tune: NyxTune(x["tune"] as? [String: Any] ?? [:]))
+        }
+        if let d = try? JSONEncoder().encode(items) { UserDefaults(suiteName: Shared.group)?.set(d, forKey: key) }
+    }
+}
+
+struct NyxPresetEntity: AppEntity {
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Пресет Nyx"
+    static var defaultQuery = NyxPresetQuery()
+    var id: String
+    var name: String
+    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
+    init(id: String, name: String) { self.id = id; self.name = name }
+    init(_ p: NyxPreset) { id = p.id; name = p.name }
+}
+
+struct NyxPresetQuery: EntityQuery {
+    init() {}
+    func entities(for identifiers: [String]) async throws -> [NyxPresetEntity] {
+        NyxPresets.all().filter { identifiers.contains($0.id) }.map { NyxPresetEntity($0) }
+    }
+    func suggestedEntities() async throws -> [NyxPresetEntity] { NyxPresets.all().map { NyxPresetEntity($0) } }
+    func defaultResult() async -> NyxPresetEntity? { NyxPresets.builtIn.first.map { NyxPresetEntity($0) } }
+}
+
+/// One preset: its rhythm, its settings and (for one of mine) its strength; the toy connects first if needed.
+struct NyxPresetIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Nyx: пресет"
+    @Parameter(title: "Пресет") var preset: NyxPresetEntity?
+    init() {}
+    init(preset: NyxPresetEntity?) { self.preset = preset }
+    func perform() async throws -> some IntentResult {
+        if let id = preset?.id { await NyxHook.run?(.preset(id)) }
+        return .result()
+    }
+}
+
+/// «Пункт керування» → «Nyx · пресет»: which preset this button plays (chosen when the button is added).
+@available(iOS 18.0, *)
+struct NyxPresetConfig: ControlConfigurationIntent {
+    static var title: LocalizedStringResource = "Пресет Nyx"
+    @Parameter(title: "Пресет") var preset: NyxPresetEntity?
+    init() {}
+    func perform() async throws -> some IntentResult { .result() }
+}
+
+/// What the widgets and the buttons show: written by the app on every real change.
+struct NyxState {
+    var phase = "off"
+    var level = 0
+    var rhythm: NyxRhythm = .steady
+    var battery: Int?
+    static let key = "nyx.state"
+    static func load() -> NyxState {
+        let d = UserDefaults(suiteName: Shared.group)?.dictionary(forKey: key) ?? [:]
+        var s = NyxState()
+        s.phase = d["phase"] as? String ?? "off"
+        s.level = (d["level"] as? NSNumber)?.intValue ?? 0
+        s.rhythm = NyxRhythm(rawValue: d["rhythm"] as? String ?? "") ?? .steady
+        s.battery = (d["battery"] as? NSNumber)?.intValue
+        return s
+    }
+}
+
+/// The round Lock Screen widget: «стоп» while it plays, «+10 %» (connecting first) while it does not.
+struct NyxTapIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Nyx: стоп або сильніше"
+    static var isDiscoverable: Bool = false
+    @Parameter(title: "Стоп") var stop: Bool
+    init() { stop = true }
+    init(stop: Bool) { self.stop = stop }
+    func perform() async throws -> some IntentResult {
+        await NyxHook.run?(stop ? .stop : .step(10))
         return .result()
     }
 }
