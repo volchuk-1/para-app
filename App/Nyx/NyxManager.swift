@@ -29,6 +29,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private(set) var level = 0
     private(set) var rhythm: NyxRhythm = .steady
     private(set) var battery: Int?
+    private(set) var tune = NyxTune.load()
     /// off · scanning · connecting · on
     private(set) var phase = "off"
     private var error: String?
@@ -120,6 +121,13 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         rhythm = r
         defaults.set(r.rawValue, forKey: "nyx.rhythm")
         holdBackground()
+        pump(); changed()
+    }
+
+    /// The settings of the rhythms (from this screen, or from the far partner's screen).
+    func set(tune t: NyxTune) {
+        tune = t
+        t.save()
         pump(); changed()
     }
 
@@ -300,8 +308,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     /// Sends what the toy should do now, unless a write is still waiting for its answer (then the answer calls this again).
     private func pump(force: Bool = false) {
         guard let p = peripheral, let tx, p.state == .connected, !inFlight else { return }
-        let tick = Int(Date().timeIntervalSince(t0) / 0.12)
-        let out = (paused ? NyxRhythm.steady : rhythm).output(level: level, tick: tick)
+        let out = (paused ? NyxRhythm.steady : rhythm).output(level: level, at: Date().timeIntervalSince(t0), tune: tune)
         if out == lastSent && !force { return }
         if out == lastSent && (rhythm == .steady || level == 0) { return }
         inFlight = true
@@ -349,7 +356,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     }
 
     func snapshot() -> [String: Any] {
-        var s: [String: Any] = ["phase": phase, "level": level, "rhythm": rhythm.rawValue, "remote": remoteAt != nil, "background": background, "paused": paused]
+        var s: [String: Any] = ["phase": phase, "level": level, "rhythm": rhythm.rawValue, "remote": remoteAt != nil, "background": background, "paused": paused, "tune": tune.dict]
         if let battery { s["battery"] = battery }
         if let error { s["error"] = error }
         if let n = peripheral?.name { s["name"] = n }

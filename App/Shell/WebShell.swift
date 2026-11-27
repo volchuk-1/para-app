@@ -232,6 +232,7 @@ final class ShellModel: NSObject, ObservableObject {
             case "level": nyx.set(level: m["level"] as? Int ?? 0)
             case "rhythm": nyx.set(rhythm: NyxRhythm(rawValue: m["rhythm"] as? String ?? "") ?? .steady)
             case "stop": nyx.halt()
+            case "tune": nyx.set(tune: NyxTune(m["tune"] as? [String: Any] ?? [:]))
             case "remote": nyx.remote(level: m["level"] as? Int, rhythm: NyxRhythm(rawValue: m["rhythm"] as? String ?? ""), on: m["on"] as? Bool ?? false)
             default: break
             }
