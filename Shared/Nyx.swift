@@ -39,6 +39,8 @@ struct NyxAttributes: ActivityAttributes {
         var battery: Int?
         /// «на відстані»: the partner is steering from far away
         var remote: Bool = false
+        /// the rhythm waits for the app to be opened (iOS ended the background time); the strength stays steady
+        var paused: Bool = false
     }
     var name: String
 }

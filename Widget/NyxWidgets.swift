@@ -50,7 +50,7 @@ private struct NyxBar: View {
 }
 
 private func subtitle(_ s: NyxAttributes.ContentState) -> String {
-    var parts = [s.remote ? "на відстані" : s.rhythm.title]
+    var parts = [s.remote ? "на відстані" : s.paused ? "\(s.rhythm.title) — відкрий DaVincit" : s.rhythm.title]
     if let b = s.battery { parts.append("батарея \(b)%") }
     return parts.joined(separator: " · ")
 }

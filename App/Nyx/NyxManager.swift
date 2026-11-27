@@ -40,6 +40,8 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     /// Every call here comes on the main queue (Bluetooth too: its queue is nil), so UIKit may be asked directly.
     private var background: Bool { MainActor.assumeIsolated { UIApplication.shared.applicationState == .background } }
     private var bgTask: UIBackgroundTaskIdentifier = .invalid
+    /// iOS took the background time back: the rhythm waits, the toy holds the chosen strength (not a random step of it).
+    private var paused = false
     private var scanTimer: Timer?
     private var watch: Timer?
     /// «На відстані»: the last word from the far partner; 5 s of silence → 0.
@@ -55,7 +57,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         rhythm = NyxRhythm(rawValue: defaults.string(forKey: "nyx.rhythm") ?? "") ?? .steady
         let nc = NotificationCenter.default
         nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in self?.wentBack() }
-        nc.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in self?.endBg() }
+        nc.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in self?.cameBack() }
         nc.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in self?.halt() }
     }
 
@@ -110,12 +112,14 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     func set(level l: Int) {
         level = max(0, min(100, l))
         if level > 0 { defaults.set(level, forKey: "nyx.level") }
+        holdBackground()
         pump(); changed()
     }
 
     func set(rhythm r: NyxRhythm) {
         rhythm = r
         defaults.set(r.rawValue, forKey: "nyx.rhythm")
+        holdBackground()
         pump(); changed()
     }
 
@@ -278,7 +282,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
 
     func peripheral(_ p: CBPeripheral, didWriteValueFor ch: CBCharacteristic, error: Error?) {
         inFlight = false
-        guard rhythm != .steady, level > 0 else { pump(); return }
+        guard rhythm != .steady, level > 0, !paused else { pump(); return }
         if background { pump(force: true); return }   // in the background: right after the answer
         guard !tickScheduled else { return }
         tickScheduled = true
@@ -297,7 +301,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private func pump(force: Bool = false) {
         guard let p = peripheral, let tx, p.state == .connected, !inFlight else { return }
         let tick = Int(Date().timeIntervalSince(t0) / 0.12)
-        let out = rhythm.output(level: level, tick: tick)
+        let out = (paused ? NyxRhythm.steady : rhythm).output(level: level, tick: tick)
         if out == lastSent && !force { return }
         if out == lastSent && (rhythm == .steady || level == 0) { return }
         inFlight = true
@@ -308,10 +312,29 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private func wentBack() {
         // «На відстані» needs the app open: in the background nobody could stop it
         if remoteAt != nil { remoteAt = nil; set(level: 0) }
-        if rhythm != .steady && level > 0 && bgTask == .invalid {
-            bgTask = MainActor.assumeIsolated { UIApplication.shared.beginBackgroundTask(withName: "nyx") { [weak self] in self?.endBg() } }
-        }
+        holdBackground()
         pump(force: true)
+    }
+
+    /// A rhythm in the background lives as long as iOS lets the app run (about half a minute after the app leaves the
+    /// screen or after a button of the plate). Then: the chosen strength, steady, and the plate says so.
+    private func holdBackground() {
+        guard background, rhythm != .steady, level > 0, bgTask == .invalid else { return }
+        paused = false
+        bgTask = MainActor.assumeIsolated { UIApplication.shared.beginBackgroundTask(withName: "nyx") { [weak self] in self?.pauseRhythm() } }
+    }
+
+    private func pauseRhythm() {
+        paused = true
+        lastSent = -1
+        pump(force: true)   // if a write is on its way, its answer sends the steady strength
+        changed()
+        endBg()
+    }
+
+    private func cameBack() {
+        endBg()
+        if paused { paused = false; pump(force: true); changed() }
     }
 
     private func endBg() {
@@ -326,7 +349,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     }
 
     func snapshot() -> [String: Any] {
-        var s: [String: Any] = ["phase": phase, "level": level, "rhythm": rhythm.rawValue, "remote": remoteAt != nil, "background": background]
+        var s: [String: Any] = ["phase": phase, "level": level, "rhythm": rhythm.rawValue, "remote": remoteAt != nil, "background": background, "paused": paused]
         if let battery { s["battery"] = battery }
         if let error { s["error"] = error }
         if let n = peripheral?.name { s["name"] = n }
@@ -336,7 +359,7 @@ final class NyxManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private func syncActivity() {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         guard phase == "on" else { return }
-        let st = NyxAttributes.ContentState(level: level, rhythm: rhythm, battery: battery, remote: remoteAt != nil)
+        let st = NyxAttributes.ContentState(level: level, rhythm: rhythm, battery: battery, remote: remoteAt != nil, paused: paused)
         if st == shown { return }
         shown = st
         let content = ActivityContent(state: st, staleDate: nil)
