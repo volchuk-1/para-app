@@ -221,6 +221,21 @@ final class ShellModel: NSObject, ObservableObject {
             if let l = waitingLink { waitingLink = nil; open(link: l) }
         case "back":
             canBack = m["on"] as? Bool ?? false
+        case "nyx":
+            // Nyx (NYX_ДИЗАЙН.md): the page steers, the toy answers through `DV.nyxNative(state)`
+            let nyx = NyxManager.shared
+            if nyx.onChange == nil {
+                nyx.onChange = { [weak self] s in Task { @MainActor in self?.call("DV.nyxNative", [s]) } }
+            }
+            switch m["op"] as? String ?? "" {
+            case "power": nyx.power(m["on"] as? Bool ?? false)
+            case "level": nyx.set(level: m["level"] as? Int ?? 0)
+            case "rhythm": nyx.set(rhythm: NyxRhythm(rawValue: m["rhythm"] as? String ?? "") ?? .steady)
+            case "stop": nyx.halt()
+            case "remote": nyx.remote(level: m["level"] as? Int, rhythm: NyxRhythm(rawValue: m["rhythm"] as? String ?? ""), on: m["on"] as? Bool ?? false)
+            default: break
+            }
+            call("DV.nyxNative", [nyx.snapshot()])
         case "haptic":
             Haptics.play(kind: m["kind"] as? String ?? "", style: m["style"] as? String ?? "")
         case "open":

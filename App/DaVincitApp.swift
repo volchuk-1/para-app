@@ -6,7 +6,7 @@ struct DaVincitApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var state = AppState()
 
-    init() { Theme.applyAppearance() }
+    init() { Theme.applyAppearance(); NyxManager.install() }
 
     var body: some Scene {
         WindowGroup {

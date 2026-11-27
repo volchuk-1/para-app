@@ -32,7 +32,8 @@ targets:
           - CFBundleURLName: com.volchuk.para
             CFBundleURLSchemes: [davincit]
         NSSupportsLiveActivities: true
-        UIBackgroundModes: [location]
+        UIBackgroundModes: [location, bluetooth-central]
+        NSBluetoothAlwaysUsageDescription: "Щоб керувати Nyx напряму, без застосунку Magic Motion: сила, ритми, батарея. Нікуди не надсилається."
         NSCalendarsFullAccessUsageDescription: "Щоб наші побачення й події були в календарі телефона, а DaVincit знав, коли ви зайняті (лише час, без назв)."
         NSCalendarsWriteOnlyAccessUsageDescription: "Щоб додати побачення у календар телефона з нагадуванням."
         NSPhotoLibraryAddUsageDescription: "Щоб зберегти фото від партнера у «Фото» на телефоні."
